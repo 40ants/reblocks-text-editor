@@ -23,15 +23,23 @@
     document))
 
 
+(defun make-span (text)
+  ;; This is a hack because common-html
+  ;; renders text nodes with metadata
+  ;; as spans even if metadata is an empty hash table
+  (common-doc:make-text text
+                        :metadata (make-hash-table)))
+
+
 (defun make-initial-document ()
   (add-reference-ids
    (common-doc:make-paragraph 
     (list 
-     (common-doc:make-text "Hello ")
+     (make-span "Hello ")
      (common-doc:make-bold
       (common-doc:make-text
        "Lisp"))
-     (common-doc:make-text " World!")))))
+     (make-span " World!")))))
 
 
 (defun to-html (document)
@@ -39,23 +47,55 @@
 
 
 (reblocks/widget:defwidget editor ()
-  ((updated-content :type (or null string)
-                    :initform nil
-                    :accessor updated-content)
+  (;; (updated-content :type (or null string)
+   ;;                  :initform nil
+   ;;                  :accessor updated-content)
    (document :type common-doc:document-node
              :initform (make-initial-document)
              :reader document)))
 
 
+(defun find-node-by-reference (document reference)
+  (flet ((search-node (node depth)
+           (declare (ignore depth))
+           (when (and (common-doc:reference node)
+                      (string= (common-doc:reference node)
+                               reference))
+             (return-from find-node-by-reference node))))
+    (common-doc.ops:traverse-document document #'search-node)
+    ;; If not found, return nothing
+    (values)))
+
 
 (defmethod reblocks/widget:render ((widget editor))
-  (flet ((process-update (&key new-html &allow-other-keys)
-           (log:info "Processing ~A" new-html)
-           (setf (updated-content widget)
-                 new-html)
+  (flet ((process-update (&key new-html path &allow-other-keys)
+           (log:info "Processing" new-html path)
+           (let* ((node-id (car (last path)))
+                  (changed-node (find-node-by-reference (document widget)
+                                                        node-id)))
+             (cond
+               (changed-node
+                (let ((edited-node (typecase changed-node
+                                     (common-doc:text-node changed-node)
+                                     (t
+                                      (first (common-doc:children changed-node))))))
+                  (cond
+                    ((typep edited-node 'common-doc:text-node)
+                     (setf (common-doc:text edited-node)
+                           new-html))
+                    (t (log:error "Node is not TEXT-NODE" edited-node))))
+                (reblocks/widget:update widget))
+               (t
+                (log:error "Unable to find CommonDoc node with" node-id)))))
+         (reset-text (&rest args)
+           (declare (ignore args))
+           (setf (slot-value widget 'document)
+                 (make-initial-document))
            (reblocks/widget:update widget)))
+    
     (let ((action-code (reblocks/actions:make-action #'process-update)))
       (reblocks/html:with-html
+        (:h1 "Making HTML editor with Reblocks and Common Lisp")
         (:div :contenteditable ""
               :data-action-code action-code
               :onload "setup()"
@@ -63,21 +103,13 @@
               :onclick "showPath()"
               ;; :beforeinput "beforeInput(event)"
 
-              (:raw (to-html (document widget)))
+              (:raw (to-html (document widget))))
 
-              (:p :id "debug"
-                  "Path will be shown here.")
+        (:p :id "debug"
+            "Path will be shown here.")
 
-              ;; (cond
-              ;;   ((updated-content widget)
-              ;;    (:raw (updated-content widget)))
-              ;;   (t
-              ;;    (reblocks/html:with-html
-              ;;      (:span "My ")
-              ;;      (:span :class "bold"
-              ;;             "EDITOR")
-              ;;      (:span "window"))))
-              )))))
+        (:p (:button :onclick (reblocks/actions:make-js-action #'reset-text)
+                     "Reset Text"))))))
 
 
 (defmethod reblocks/dependencies:get-dependencies ((widget editor))
@@ -93,10 +125,20 @@
                       (log "Handling oninput event"))
                (chain console
                       (log event))
-               (initiate-action (@ event target dataset action-code)
-                                (create :args (create :new-html (@ event target inner-h-t-m-l))))
-               (set-timeout restore-selection
-                            1000))
+               (let* ((path (calculate-path))
+                      (target (@ event target inner-h-t-m-l))
+                      (edited-node-id (@ path
+                                         (1- (@ path length))))
+                      (edited-node (chain document
+                                          (get-element-by-id edited-node-id)))
+                      (text (@ edited-node inner-h-t-m-l))
+                      (args (create
+                             :new-html text
+                             :path path)))
+                 (chain console
+                        (log edited-node))
+                 (initiate-action (@ event target dataset action-code)
+                                  (create :args args))))
 
              (defun calculate-path ()
                "Returns a #ids of the currently selected node and all its parents,
@@ -139,48 +181,27 @@
                       (add-event-listener "beforeinput"
                                           before-input)))
              (defun before-input (event)
-               (save-selection)
+               ;; (save-selection)
 
                (chain console
                       (log "Handling before-input event"))
                
-               (chain console
-                      (log event))
+               ;; (chain console
+               ;;        (log event))
 
-               (chain console
-                      (log (chain event
-                                  (get-target-ranges))))
+               ;; (chain console
+               ;;        (log (chain event
+               ;;                    (get-target-ranges))))
 
-               (chain console
-                      (log (chain event
-                                  (get-target-ranges)
-                                  0
-                                  start-container)))
+               ;; (chain console
+               ;;        (log (chain event
+               ;;                    (get-target-ranges)
+               ;;                    0
+               ;;                    start-container)))
                
                ;; (chain event
                ;;        (prevent-default))
-               )
-
-             (defun save-selection ()
-               (setf saved-selection
-                     (chain
-                      (chain window
-                             (get-selection))
-                      (get-range-at 0))))
-
-             (defun restore-selection ()
-               (chain console
-                      (log "Restoring 1"))
-               (when saved-selection
-                 (chain console
-                        (log "Restoring 2"))
-                 
-                 (let ((sel (chain window
-                                   (get-selection))))
-                   (chain sel
-                          (remove-all-ranges))
-                   (chain sel
-                          (add-range saved-selection)))))))
+               )))
          (reblocks-lass:make-dependency
            '(.editor
              (.bold :font-weight bold)))
