@@ -15,7 +15,7 @@
   (flet ((set-reference-id (node depth)
            (declare (ignore depth))
            (setf (common-doc:reference node)
-                 (format nil "~A" next-id))
+                 (format nil "el~A" next-id))
            (incf next-id)
            (values)))
     (common-doc.ops:traverse-document document
@@ -67,8 +67,12 @@
     (values)))
 
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; 
+;; This is our BACKEND code doing most business logic ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (defmethod reblocks/widget:render ((widget editor))
-  (flet ((process-update (&key new-html path &allow-other-keys)
+  (flet ((process-update (&key new-html path cursor-position &allow-other-keys)
            (log:info "Processing" new-html path)
            (let* ((node-id (car (last path)))
                   (changed-node (find-node-by-reference (document widget)
@@ -82,9 +86,15 @@
                   (cond
                     ((typep edited-node 'common-doc:text-node)
                      (setf (common-doc:text edited-node)
-                           new-html))
-                    (t (log:error "Node is not TEXT-NODE" edited-node))))
-                (reblocks/widget:update widget))
+                           (plump:decode-entities new-html)))
+                    (t (log:error "Node is not TEXT-NODE" edited-node)))
+                  
+                  ;; (reblocks/commands:add-command 'just-a-check)
+                  (reblocks/widget:update widget)
+                  (reblocks/commands:add-command 'set-cursor
+                                                 :node-id (common-doc:reference changed-node)
+                                                 ;; We should figure out how to pass this from the frontend first
+                                                 :position cursor-position)))
                (t
                 (log:error "Unable to find CommonDoc node with" node-id)))))
          (reset-text (&rest args)
@@ -96,7 +106,7 @@
     (let ((action-code (reblocks/actions:make-action #'process-update)))
       (reblocks/html:with-html
         (:h1 "Making HTML editor with Reblocks and Common Lisp")
-        (:div :contenteditable ""
+        (:pre :contenteditable ""
               :data-action-code action-code
               :onload "setup()"
               :oninput "updateEditor(event)"
@@ -112,6 +122,12 @@
                      "Reset Text"))))))
 
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; 
+;; This is our FRONTEND PART                              ;;
+;; Code from this method will be translated to JavaScript ;;
+;; using Parenscrip system                                ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (defmethod reblocks/dependencies:get-dependencies ((widget editor))
   (list* (reblocks-parenscript:make-dependency
            (progn
@@ -119,6 +135,48 @@
                     (ready (lambda ()
                              (chain (j-query ".editor")
                                     (each setup)))))
+
+             (setf (chain window
+                          command-handlers
+                          set-cursor)
+                   set-cursor)
+             (setf (chain window
+                          command-handlers
+                          just-a-check)
+                   just-a-check)
+
+             (defun just-a-check (args)
+               (chain console
+                      (log "JUST A CHECK"))
+               )
+
+             (defun set-cursor (args)
+               (chain console
+                      (log "Here we should set a cursor back into the element" args))
+               (let* ((element-id (@ args node-id))
+                      (position (@ args position))
+                      (element ;; element-id
+                        (chain document
+                               (get-element-by-id element-id)))
+                      (range (chain document (create-range)))
+                      (sel (chain window (get-selection)))
+                      )
+                 ;; (chain element
+                 ;;        (focus))
+                 (chain range
+                        (set-start (@ element
+                                      child-nodes
+                                      0)
+                                   position))
+                 (chain range
+                        (collapse t))
+                 (chain sel
+                        (remove-all-ranges))
+                 (chain sel
+                        (add-range range))
+                 (chain console (log "Selection should be changed now to" sel))
+                 )
+               )
              
              (defun update-editor (event)
                (chain console
@@ -132,11 +190,21 @@
                       (edited-node (chain document
                                           (get-element-by-id edited-node-id)))
                       (text (@ edited-node inner-h-t-m-l))
+                      (cursor-position (chain window
+                                              (get-selection)
+                                              anchor-offset))
                       (args (create
                              :new-html text
-                             :path path)))
+                             :path path
+                             :cursor-position cursor-position)))
                  (chain console
                         (log edited-node))
+
+                 ;; Before we send an action, we need to remember which
+                 ;; element was edited, to restore cursor position
+                 ;; after the widget will be updated.
+                 ;;
+                 ;; Or may be we might initiate update from the server-side?
                  (initiate-action (@ event target dataset action-code)
                                   (create :args args))))
 
