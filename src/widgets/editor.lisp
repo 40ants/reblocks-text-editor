@@ -11,7 +11,7 @@
 (in-package #:zibaldone/widgets/editor)
 
 
-(defun add-reference-ids (document &aux (next-id 1))
+(defun add-reference-ids (document &key (next-id 1))
   (flet ((set-reference-id (node depth)
            (declare (ignore depth))
            (setf (common-doc:reference node)
@@ -20,30 +20,69 @@
            (values)))
     (common-doc.ops:traverse-document document
                                       #'set-reference-id)
-    document))
+    (values document
+            next-id)))
 
 
-(defun make-span (text)
+(defclass markup-node (common-doc:content-node)
+  ())
+
+
+(common-html.emitter::define-simple-emitter markup-node "span")
+
+
+(defun make-span (content)
   ;; This is a hack because common-html
   ;; renders text nodes with metadata
   ;; as spans even if metadata is an empty hash table
-  (common-doc:make-text text
-                        :metadata (make-hash-table)))
+  (let ((content (typecase content
+                   (string (common-doc:make-text content))
+                   (t content))))
+    (make-instance 'markup-node
+                   :children (uiop:ensure-list content))))
 
+
+(defun (setf next-id) (next-id document)
+  (setf (gethash "next-id"
+                 (common-doc:metadata document))
+        next-id))
+
+(defun next-id (document)
+  (gethash "next-id"
+           (common-doc:metadata document)))
 
 (defun make-initial-document ()
-  (add-reference-ids
-   (common-doc:make-paragraph 
-    (list 
-     (make-span "Hello ")
-     (common-doc:make-bold
-      (common-doc:make-text
-       "Lisp"))
-     (make-span " World!")))))
+  (let ((doc (common-doc:make-content
+              (list (common-doc:make-paragraph 
+                     (list 
+                      (make-span "Hello ")
+                      (common-doc:make-bold
+                       (common-doc:make-text
+                        "Lisp"))
+                      (make-span " World!")))
+                    
+                    (common-doc:make-paragraph 
+                     (list 
+                      (make-span "Second line"))))
+              :metadata (make-hash-table :test 'equal))))
+    (multiple-value-bind (doc next-id)
+        (add-reference-ids doc)
+      (setf (next-id doc)
+            next-id)
+      (values doc))))
 
 
 (defun to-html (document)
   (common-html.emitter:node-to-html-string document))
+
+
+(defun from-markdown (text)
+  (common-doc.format:parse-document (make-instance 'commondoc-markdown:markdown)
+                                    text))
+
+(defun has-markup-p (paragraph)
+  (> (length (common-doc:children paragraph))
+     1))
 
 
 (reblocks/widget:defwidget editor ()
@@ -53,6 +92,34 @@
    (document :type common-doc:document-node
              :initform (make-initial-document)
              :reader document)))
+
+
+(defgeneric map-document (node function &optional depth)
+  (:documentation "Map a function recursively (depth-first),
+                   possibly replacing nodes with ones a FUNCTION will return.
+
+                   Warning, this function may modify the original nodes tree!
+
+                   The function should return the same node or the new one.
+                   If a new node was returned, the function will not
+                   be applied to its content.")
+
+  (:method ((doc common-doc:document) function &optional (depth 0))
+    (setf (common-doc:children doc)
+          (loop for child in (common-doc:children doc)
+                collect (map-document child function (1+ depth))))
+    (values doc))
+
+  (:method ((cnode common-doc:content-node) function &optional (depth 0))
+    (let ((possibly-new-node (funcall function cnode depth)))
+      (when (eql possibly-new-node cnode)
+        (setf (common-doc:children cnode)
+              (loop for child in (common-doc:children cnode)
+                    collect (map-document child function (1+ depth)))))
+      (values possibly-new-node)))
+
+  (:method ((dnode common-doc:document-node) function &optional (depth 0))
+    (funcall function dnode depth)))
 
 
 (defun find-node-by-reference (document reference)
@@ -67,41 +134,93 @@
     (values)))
 
 
+(defun replace-node (document node-to-replace new-node)
+  (flet ((do-replace (node depth)
+           (declare (ignore depth))
+           (if (eql node node-to-replace)
+               new-node
+               node)))
+    (map-document document #'do-replace)))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; 
 ;; This is our BACKEND code doing most business logic ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defmethod reblocks/widget:render ((widget editor))
-  (flet ((process-update (&key new-html path cursor-position &allow-other-keys)
-           (log:info "Processing" new-html path)
-           (let* ((node-id (car (last path)))
-                  (changed-node (find-node-by-reference (document widget)
-                                                        node-id)))
-             (cond
-               (changed-node
-                (let ((edited-node (typecase changed-node
-                                     (common-doc:text-node changed-node)
-                                     (t
-                                      (first (common-doc:children changed-node))))))
-                  (cond
-                    ((typep edited-node 'common-doc:text-node)
-                     (setf (common-doc:text edited-node)
-                           (plump:decode-entities new-html)))
-                    (t (log:error "Node is not TEXT-NODE" edited-node)))
-                  
-                  ;; (reblocks/commands:add-command 'just-a-check)
-                  (reblocks/widget:update widget)
-                  (reblocks/commands:add-command 'set-cursor
-                                                 :node-id (common-doc:reference changed-node)
-                                                 ;; We should figure out how to pass this from the frontend first
-                                                 :position cursor-position)))
-               (t
-                (log:error "Unable to find CommonDoc node with" node-id)))))
-         (reset-text (&rest args)
-           (declare (ignore args))
-           (setf (slot-value widget 'document)
-                 (make-initial-document))
-           (reblocks/widget:update widget)))
+  (labels ((prepare-new-content (text)
+             (let ((paragraph (from-markdown text)))
+               (cond
+                 ((has-markup-p paragraph)
+                  ;; Here we also need to assign
+                  ;; a new references to our new nodes.
+                  ;; but to do this, we need to store a maximum
+                  ;; ID already used.
+                  (let ((subtree (make-span
+                                  (common-doc:children paragraph))))
+                    (multiple-value-bind (subtree next-id)
+                        (add-reference-ids subtree :next-id (next-id (document widget)))
+                      (setf (next-id (document widget))
+                            next-id)
+                      (values subtree))))
+                 (t
+                  text))))
+           (process-update (&key new-html path cursor-position &allow-other-keys)
+             (log:info "Processing" new-html path)
+             (let* ((node-id (car (last path)))
+                    (changed-node (find-node-by-reference (document widget)
+                                                          node-id))
+                    (plain-text (plump:decode-entities new-html))
+                    ;; Otherwise, we need to replace the text node's
+                    ;; content with a plain text
+                    (new-content (prepare-new-content plain-text)))
+               (cond
+                 (changed-node
+                  (let ((cursor-node changed-node))
+                    (typecase new-content
+                      ;; If no markup was introduced, then we need
+                      ;; to replace a text content of the edited node.
+                      (string
+                       (let ((edited-node
+                               (typecase changed-node
+                                 (common-doc:text-node changed-node)
+                                 (t
+                                  (first (common-doc:children changed-node))))))
+                         (cond
+                           ((typep edited-node 'common-doc:text-node)
+                            (setf (common-doc:text edited-node)
+                                  new-content))
+                           (t (log:error "Node is not TEXT-NODE" edited-node)))))
+                      ;; Otherwise, we need to replace the whole edited node
+                      ;; with a new CommonDoc element containing markup
+                      (t
+                       (replace-node (document widget)
+                                     changed-node
+                                     new-content)
+                       ;; We need to move cursor into our new node,
+                       ;; because CHNAGED-NODE will be removed from the DOM
+                       ;; after the widget's update:
+                       (setf cursor-node
+                             new-content
+                             ;; Placing content to the end of the new block:
+                             ;; NO, THIS DOES NOT WORK.
+                             ;; I NEED TO FIGURE OUT, HOW TO DETERMINE
+                             ;; A CORRECT CURSOR POSITION INSIDE NESTED
+                             ;; MARKUP ELEMENTS!
+                             cursor-position
+                             (1- (length (common-doc.ops:collect-all-text new-content))))))
+
+                    (reblocks/widget:update widget)
+                    (reblocks/commands:add-command 'set-cursor
+                                                   :node-id (common-doc:reference cursor-node)
+                                                   ;; We should figure out how to pass this from the frontend first
+                                                   :position cursor-position)))
+                 (t
+                  (log:error "Unable to find CommonDoc node with" node-id)))))
+           (reset-text (&rest args)
+             (declare (ignore args))
+             (setf (slot-value widget 'document)
+                   (make-initial-document))
+             (reblocks/widget:update widget)))
     
     (let ((action-code (reblocks/actions:make-action #'process-update)))
       (reblocks/html:with-html
@@ -140,16 +259,7 @@
                           command-handlers
                           set-cursor)
                    set-cursor)
-             (setf (chain window
-                          command-handlers
-                          just-a-check)
-                   just-a-check)
-
-             (defun just-a-check (args)
-               (chain console
-                      (log "JUST A CHECK"))
-               )
-
+             
              (defun set-cursor (args)
                (chain console
                       (log "Here we should set a cursor back into the element" args))
@@ -271,6 +381,20 @@
                ;;        (prevent-default))
                )))
          (reblocks-lass:make-dependency
-           '(.editor
-             (.bold :font-weight bold)))
+           '(body
+             (.editor
+              (.bold :font-weight bold))
+
+             ;; (.editor
+             ;;  (:focus
+             ;;   :background red))
+             
+             ;; (.editor
+             ;;  ((:and p :focus-within)
+             ;;   :background red))
+
+             ;; ((:and .editor :focus-within)
+             ;;  :background yellow)
+
+             ))
          (call-next-method)))
