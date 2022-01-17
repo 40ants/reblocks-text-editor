@@ -4,6 +4,7 @@
   (:import-from #:common-html)
   (:import-from #:reblocks-parenscript)
   (:import-from #:reblocks-lass)
+  (:import-from #:zibaldone/html)
   (:import-from #:parenscript
                 #:create
                 #:chain
@@ -174,7 +175,8 @@
              (let* ((node-id (car (last path)))
                     (changed-node (find-node-by-reference (document widget)
                                                           node-id))
-                    (plain-text (plump:decode-entities new-html))
+                    (plain-text ;; (plump:decode-entities new-html)
+                                (plump:render-text (plump:parse new-html)))
                     ;; Otherwise, we need to replace the text node's
                     ;; content with a plain text
                     (new-content (prepare-new-content plain-text)))
@@ -212,7 +214,9 @@
                              ;; A CORRECT CURSOR POSITION INSIDE NESTED
                              ;; MARKUP ELEMENTS!
                              cursor-position
-                             (1- (length (common-doc.ops:collect-all-text new-content))))))
+                             0
+                             ;; (1- (length (common-doc.ops:collect-all-text new-content)))
+                             )))
 
                     (reblocks/widget:update widget)
                     (reblocks/commands:add-command 'set-cursor
@@ -230,7 +234,9 @@
     (let ((action-code (reblocks/actions:make-action #'process-update)))
       (reblocks/html:with-html
         (:h1 "Making HTML editor with Reblocks and Common Lisp")
-        (:pre :data-action-code action-code
+        (:div :class "content"
+              :data-action-code action-code
+              :contenteditable ""
               :onload "setup()"
               :oninput "updateEditor(event)"
               :onclick "showPath()"
@@ -289,20 +295,36 @@
                  (chain sel
                         (add-range range))
                  (chain console (log "Selection should be changed now to" sel))
-                 )
-               )
+                 ))
+
+             (defun take (n arr)
+               (loop for item in arr
+                     for i from 1 to n
+                     collect item))
+
+             (defun trim-path-to-nearest-paragraph (path)
+               (loop for idx = (1- (@ path length))
+                       then (- idx 1)
+                     for id = (aref path idx)
+                     for el = (chain document
+                                     (get-element-by-id id))
+                     when (= (@ el tag-name)
+                             "P")
+                       do (return (take (1+ idx) path))))
              
              (defun update-editor (event)
                (chain console
                       (log "Handling oninput event"))
                (chain console
                       (log event))
-               (let* ((path (calculate-path))
+               (let* ((path (trim-path-to-nearest-paragraph
+                             (calculate-path)))
                       (target (@ event target inner-h-t-m-l))
                       (edited-node-id (@ path
                                          (1- (@ path length))))
-                      (edited-node (chain document
-                                          (get-element-by-id edited-node-id)))
+                      (edited-node ;; (find-nearest-paragraph path)
+                        (chain document
+                               (get-element-by-id edited-node-id)))
                       (text (@ edited-node inner-h-t-m-l))
                       (cursor-position (chain window
                                               (get-selection)
@@ -335,8 +357,8 @@
                                            (list)))
                                  (parent (@ node parent-node)))
                             (if (and parent
-                                     (@ parent id)
-                                     (not (chain (@ parent id)
+                                     (not (chain (or (@ parent id)
+                                                     "")
                                                  (starts-with "dom"))))
                                 (append (make-path parent)
                                         path)
@@ -387,13 +409,15 @@
          (reblocks-lass:make-dependency
            '(body
              (.editor
+              (.content :white-space pre-wrap)
               (.bold :font-weight bold)
-              (.markup :display none))
+              ;; (.markup :display none)
+              )
 
-             (.editor
-              (:focus
-               :outline none
-               (.markup :display inline-block)))
+             ;; (.editor
+             ;;  (:focus
+             ;;   :outline none
+             ;;   (.markup :display inline-block)))
              
              ;; (.editor
              ;;  ((:and p :focus-within)
