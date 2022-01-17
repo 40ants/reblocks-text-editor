@@ -155,21 +155,28 @@
 (defmethod reblocks/widget:render ((widget editor))
   (labels ((prepare-new-content (text)
              (let ((paragraph (from-markdown text)))
-               (cond
-                 ((has-markup-p paragraph)
-                  ;; Here we also need to assign
-                  ;; a new references to our new nodes.
-                  ;; but to do this, we need to store a maximum
-                  ;; ID already used.
-                  (let ((subtree (make-span
-                                  (common-doc:children paragraph))))
-                    (multiple-value-bind (subtree next-id)
-                        (add-reference-ids subtree :next-id (next-id (document widget)))
-                      (setf (next-id (document widget))
-                            next-id)
-                      (values subtree))))
-                 (t
-                  text))))
+               (multiple-value-bind (paragraph next-id)
+                   (add-reference-ids paragraph :next-id (next-id (document widget)))
+                 (setf (next-id (document widget))
+                       next-id)
+                 (values paragraph))
+               
+               ;; (cond
+               ;;   ((has-markup-p paragraph)
+               ;;    ;; Here we also need to assign
+               ;;    ;; a new references to our new nodes.
+               ;;    ;; but to do this, we need to store a maximum
+               ;;    ;; ID already used.
+               ;;    (let ((subtree (make-span
+               ;;                    (common-doc:children paragraph))))
+               ;;      (multiple-value-bind (subtree next-id)
+               ;;          (add-reference-ids subtree :next-id (next-id (document widget)))
+               ;;        (setf (next-id (document widget))
+               ;;              next-id)
+               ;;        (values subtree))))
+               ;;   (t
+               ;;    text))
+               ))
            (process-update (&key new-html path cursor-position &allow-other-keys)
              (log:info "Processing" new-html path)
              (let* ((node-id (car (last path)))
