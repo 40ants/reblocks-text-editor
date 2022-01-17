@@ -28,7 +28,12 @@
   ())
 
 
-(common-html.emitter::define-simple-emitter markup-node "span")
+(defmethod zibaldone/html::to-html ((node markup-node))
+  (reblocks/html:with-html
+    ;; TODO: add a check that there is no nodes prohibited as a span container  
+    (:span :id (common-doc:reference node)
+           (mapc #'zibaldone/html::to-html
+                 (common-doc:children node)))))
 
 
 (defun make-span (content)
@@ -55,15 +60,15 @@
   (let ((doc (common-doc:make-content
               (list (common-doc:make-paragraph 
                      (list 
-                      (make-span "Hello ")
+                      (common-doc:make-text "Hello ")
                       (common-doc:make-bold
                        (common-doc:make-text
                         "Lisp"))
-                      (make-span " World!")))
+                      (common-doc:make-text " World!")))
                     
                     (common-doc:make-paragraph 
                      (list 
-                      (make-span "Second line"))))
+                      (common-doc:make-text "Second line"))))
               :metadata (make-hash-table :test 'equal))))
     (multiple-value-bind (doc next-id)
         (add-reference-ids doc)
@@ -225,14 +230,13 @@
     (let ((action-code (reblocks/actions:make-action #'process-update)))
       (reblocks/html:with-html
         (:h1 "Making HTML editor with Reblocks and Common Lisp")
-        (:pre :contenteditable ""
-              :data-action-code action-code
+        (:pre :data-action-code action-code
               :onload "setup()"
               :oninput "updateEditor(event)"
               :onclick "showPath()"
               ;; :beforeinput "beforeInput(event)"
 
-              (:raw (to-html (document widget))))
+              (zibaldone/html::to-html (document widget)))
 
         (:p :id "debug"
             "Path will be shown here.")
@@ -383,11 +387,13 @@
          (reblocks-lass:make-dependency
            '(body
              (.editor
-              (.bold :font-weight bold))
+              (.bold :font-weight bold)
+              (.markup :display none))
 
-             ;; (.editor
-             ;;  (:focus
-             ;;   :background red))
+             (.editor
+              (:focus
+               :outline none
+               (.markup :display inline-block)))
              
              ;; (.editor
              ;;  ((:and p :focus-within)
