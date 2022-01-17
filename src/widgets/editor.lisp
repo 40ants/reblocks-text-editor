@@ -148,6 +148,43 @@
                node)))
     (map-document document #'do-replace)))
 
+
+(defun find-node-at-position (node cursor-position)
+  (labels ((recursive-find (node)
+             (etypecase node
+               (common-doc:text-node
+                (let* ((text (common-doc:text node))
+                       (content-length
+                         (length text)))
+                  (if (<= cursor-position
+                          content-length)
+                      (return-from find-node-at-position
+                        (values node
+                                cursor-position))
+                      (progn (log:info "Skipping" text content-length)
+                             (decf cursor-position
+                                   content-length)))))
+               (common-doc:content-node
+                (unless (zerop (markup-length node))
+                  (log:info "Skipping" (markup-length node) "for" node)
+                  (decf cursor-position
+                        (markup-length node)))
+                
+                (mapc #'recursive-find
+                      (common-doc:children node))
+                
+                (unless (zerop (markup-length node))
+                  (log:info "Skipping" (markup-length node) "for" node)
+                  (decf cursor-position
+                        (markup-length node))))))
+           (markup-length (node)
+             (typecase node
+               (common-doc:bold 2)
+               (common-doc:italic 1)
+               (t 0))))
+    (recursive-find node)
+    (values nil)))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; 
 ;; This is our BACKEND code doing most business logic ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -178,12 +215,12 @@
                ;;    text))
                ))
            (process-update (&key new-html path cursor-position &allow-other-keys)
-             (log:info "Processing" new-html path)
+             (log:info "Processing" new-html path cursor-position)
              (let* ((node-id (car (last path)))
                     (changed-node (find-node-by-reference (document widget)
                                                           node-id))
                     (plain-text ;; (plump:decode-entities new-html)
-                                (plump:render-text (plump:parse new-html)))
+                      (plump:render-text (plump:parse new-html)))
                     ;; Otherwise, we need to replace the text node's
                     ;; content with a plain text
                     (new-content (prepare-new-content plain-text)))
@@ -213,17 +250,16 @@
                        ;; We need to move cursor into our new node,
                        ;; because CHNAGED-NODE will be removed from the DOM
                        ;; after the widget's update:
-                       (setf cursor-node
-                             new-content
-                             ;; Placing content to the end of the new block:
-                             ;; NO, THIS DOES NOT WORK.
-                             ;; I NEED TO FIGURE OUT, HOW TO DETERMINE
-                             ;; A CORRECT CURSOR POSITION INSIDE NESTED
-                             ;; MARKUP ELEMENTS!
-                             cursor-position
-                             0
-                             ;; (1- (length (common-doc.ops:collect-all-text new-content)))
-                             )))
+                       (multiple-value-bind (node new-cursor-position)
+                           (find-node-at-position new-content cursor-position)
+                         (unless node
+                           (log:error "Unable to find node for"
+                                      cursor-position
+                                      plain-text))
+                         (setf cursor-node
+                               node
+                               cursor-position
+                               new-cursor-position))))
 
                     (reblocks/widget:update widget)
                     (reblocks/commands:add-command 'set-cursor
@@ -333,9 +369,10 @@
                         (chain document
                                (get-element-by-id edited-node-id)))
                       (text (@ edited-node inner-h-t-m-l))
-                      (cursor-position (chain window
-                                              (get-selection)
-                                              anchor-offset))
+                      (cursor-position ;; (chain window
+                                       ;;        (get-selection)
+                                       ;;        anchor-offset)
+                                       (caret-position))
                       (args (create
                              :new-html text
                              :path path
@@ -351,6 +388,35 @@
                  (initiate-action (@ event target dataset action-code)
                                   (create :args args))))
 
+
+             (defun go-up-to (tag-name starting-node)
+               (loop for node = starting-node
+                       then (@ node parent-node)
+                     when (= (@ node tag-name)
+                             tag-name)
+                       do (return node)))
+             
+             (defun caret-position ()
+               ;; Idea was taken from
+               ;; https://github.com/accursoft/caret/blob/922257adae80c529c237deaddc49f65d7c794534/jquery.caret.js#L17-L29
+               (let* ((selection (chain window
+                                        (get-selection)))
+                      (node (@ selection
+                               base-node))
+                      (paragraph (go-up-to "P" node))
+                      (range-1 (chain selection
+                                      (get-range-at 0)))
+                      (range-2 (chain range-1
+                                      (clone-range))))
+                 (chain range-2
+                        (select-node-contents paragraph))
+                 (chain range-2
+                        (set-end (@ range-1 end-container)
+                                 (@ range-1 end-offset)))
+                 (chain range-2
+                        (to-string)
+                        length)))
+             
              (defun calculate-path ()
                "Returns a #ids of the currently selected node and all its parents,
                 starting from the most outer parent.
@@ -380,10 +446,13 @@
                    path)))
              
              (defun show-path ()
-               (let ((path (calculate-path)))
+               (let ((path (calculate-path))
+                     (position (caret-position)))
                  (chain (j-query "#debug")
                         (html (chain -j-s-o-n
-                                     (stringify path))))))
+                                     (stringify
+                                      (create :path path
+                                              :caret position)))))))
 
              (defun setup ()
                (chain console
