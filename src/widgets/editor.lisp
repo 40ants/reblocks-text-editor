@@ -25,27 +25,27 @@
             next-id)))
 
 
-(defclass markup-node (common-doc:content-node)
-  ())
+;; (defclass markup-node (common-doc:content-node)
+;;   ())
 
 
-(defmethod zibaldone/html::to-html ((node markup-node))
-  (reblocks/html:with-html
-    ;; TODO: add a check that there is no nodes prohibited as a span container  
-    (:span :id (common-doc:reference node)
-           (mapc #'zibaldone/html::to-html
-                 (common-doc:children node)))))
+;; (defmethod zibaldone/html::to-html ((node markup-node))
+;;   (reblocks/html:with-html
+;;     ;; TODO: add a check that there is no nodes prohibited as a span container  
+;;     (:span :id (common-doc:reference node)
+;;            (mapc #'zibaldone/html::to-html
+;;                  (common-doc:children node)))))
 
 
-(defun make-span (content)
-  ;; This is a hack because common-html
-  ;; renders text nodes with metadata
-  ;; as spans even if metadata is an empty hash table
-  (let ((content (typecase content
-                   (string (common-doc:make-text content))
-                   (t content))))
-    (make-instance 'markup-node
-                   :children (uiop:ensure-list content))))
+;; (defun make-span (content)
+;;   ;; This is a hack because common-html
+;;   ;; renders text nodes with metadata
+;;   ;; as spans even if metadata is an empty hash table
+;;   (let ((content (typecase content
+;;                    (string (common-doc:make-text content))
+;;                    (t content))))
+;;     (make-instance 'markup-node
+;;                    :children (uiop:ensure-list content))))
 
 
 (defun (setf next-id) (next-id document)
@@ -113,7 +113,8 @@
   (:method ((doc common-doc:document) function &optional (depth 0))
     (setf (common-doc:children doc)
           (loop for child in (common-doc:children doc)
-                collect (map-document child function (1+ depth))))
+                unless (zibaldone/html::markup-p child)
+                  collect (map-document child function (1+ depth))))
     (values doc))
 
   (:method ((cnode common-doc:content-node) function &optional (depth 0))
@@ -121,7 +122,8 @@
       (when (eql possibly-new-node cnode)
         (setf (common-doc:children cnode)
               (loop for child in (common-doc:children cnode)
-                    collect (map-document child function (1+ depth)))))
+                    unless (zibaldone/html::markup-p child)
+                      collect (map-document child function (1+ depth)))))
       (values possibly-new-node)))
 
   (:method ((dnode common-doc:document-node) function &optional (depth 0))
@@ -211,7 +213,12 @@
 ;; This is our BACKEND code doing most business logic ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(defvar *document* nil)
+
 (defmethod reblocks/widget:render ((widget editor))
+  (setf *document*
+        (document widget))
+  
   (labels ((prepare-new-content (text)
              (let ((paragraph (from-markdown text)))
                (multiple-value-bind (paragraph next-id)
@@ -237,7 +244,7 @@
                ;;    text))
                ))
            (process-update (&key new-html path cursor-position &allow-other-keys)
-             (log:info "Processing" new-html path cursor-position)
+             (log:warn "Processing" new-html path cursor-position)
              (let* ((node-id (car (last path)))
                     (changed-node (find-node-by-reference (document widget)
                                                           node-id))
@@ -252,6 +259,8 @@
                       ;; If no markup was introduced, then we need
                       ;; to replace a text content of the edited node.
                       (string
+                       (log:warn "Replacing content inside node"
+                                 changed-node)
                        (let ((edited-node
                                (typecase changed-node
                                  (common-doc:text-node changed-node)
@@ -265,6 +274,8 @@
                       ;; Otherwise, we need to replace the whole edited node
                       ;; with a new CommonDoc element containing markup
                       (t
+                       (log:warn "Replacing usual node"
+                                 changed-node)
                        (replace-node (document widget)
                                      changed-node
                                      new-content)
