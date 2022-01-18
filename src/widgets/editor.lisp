@@ -149,13 +149,21 @@
     (map-document document #'do-replace)))
 
 
-(defun find-node-at-position (node cursor-position)
+(defun find-node-at-position (node cursor-position &aux
+                                                     last-visited-node
+                                                     last-visited-node-content-length)
   (labels ((recursive-find (node)
+             (setf last-visited-node
+                   node)
+             
              (etypecase node
                (common-doc:text-node
                 (let* ((text (common-doc:text node))
                        (content-length
                          (length text)))
+                  (setf last-visited-node-content-length
+                        content-length)
+                  
                   (if (<= cursor-position
                           content-length)
                       (return-from find-node-at-position
@@ -165,25 +173,39 @@
                              (decf cursor-position
                                    content-length)))))
                (common-doc:content-node
-                (unless (zerop (markup-length node))
-                  (log:info "Skipping" (markup-length node) "for" node)
-                  (decf cursor-position
-                        (markup-length node)))
+                ;; (setf last-visited-node-content-length
+                ;;       (1+
+                ;;        (* (markup-length node)
+                ;;           2)))
+                
+                ;; (unless (zerop (markup-length node))
+                ;;   (log:info "Skipping" (markup-length node) "for" node)
+                ;;   (decf cursor-position
+                ;;         (markup-length node)))
                 
                 (mapc #'recursive-find
                       (common-doc:children node))
                 
-                (unless (zerop (markup-length node))
-                  (log:info "Skipping" (markup-length node) "for" node)
-                  (decf cursor-position
-                        (markup-length node))))))
-           (markup-length (node)
-             (typecase node
-               (common-doc:bold 2)
-               (common-doc:italic 1)
-               (t 0))))
+                ;; (unless (zerop (markup-length node))
+                ;;   (log:info "Skipping" (markup-length node) "for" node)
+                ;;   (decf cursor-position
+                ;;         (markup-length node)))
+                )))
+           ;; (markup-length (node)
+           ;;   (typecase node
+           ;;     (common-doc:bold 2)
+           ;;     (common-doc:italic 1)
+           ;;     (t 0)))
+           )
+    
     (recursive-find node)
-    (values nil)))
+    (values last-visited-node
+            last-visited-node-content-length)))
+
+
+(defun remove-html-tags (html-string)
+  (cl-ppcre:regex-replace-all "<[^>]+>" html-string
+                              ""))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; 
 ;; This is our BACKEND code doing most business logic ;;
@@ -219,8 +241,7 @@
              (let* ((node-id (car (last path)))
                     (changed-node (find-node-by-reference (document widget)
                                                           node-id))
-                    (plain-text ;; (plump:decode-entities new-html)
-                      (plump:render-text (plump:parse new-html)))
+                    (plain-text (remove-html-tags new-html))
                     ;; Otherwise, we need to replace the text node's
                     ;; content with a plain text
                     (new-content (prepare-new-content plain-text)))
@@ -324,21 +345,20 @@
                       (range (chain document (create-range)))
                       (sel (chain window (get-selection)))
                       )
-                 ;; (chain element
-                 ;;        (focus))
+                 
                  (chain range
-                        (set-start (@ element
-                                      child-nodes
-                                      0)
-                                   position))
+                        (set-start
+                         (@ element
+                            child-nodes
+                            0)
+                         position))
                  (chain range
                         (collapse t))
                  (chain sel
                         (remove-all-ranges))
                  (chain sel
                         (add-range range))
-                 (chain console (log "Selection should be changed now to" sel))
-                 ))
+                 (chain console (log "Selection should be changed now to" sel))))
 
              (defun take (n arr)
                (loop for item in arr
