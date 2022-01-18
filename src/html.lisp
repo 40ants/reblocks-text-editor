@@ -18,6 +18,10 @@
   (:documentation "Returns an optional string with HTML class of the element."))
 
 
+(defun to-html-string (node)
+  (with-output-to-string (reblocks/html:*stream*)
+    (to-html node)))
+
 (defmethod html-class ((node common-doc:document-node))
   (awhen (common-doc:metadata node)
     (awhen (gethash "class" it)
@@ -35,7 +39,12 @@
       ;; TODO: add a check that there is no nodes prohibited as a span's content
       (:tag :name tag
             :id (common-doc:reference node)
-            (mapc #'to-html (common-doc:children node))))))
+            (to-html (common-doc:children node))))))
+
+
+(defmethod to-html ((nodes list))
+  (mapc #'to-html nodes)
+  (values))
 
 ;; (defmethod to-html ((node common-doc:paragraph))
 ;;   (reblocks/html:with-html

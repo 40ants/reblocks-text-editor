@@ -78,8 +78,8 @@
       (values doc))))
 
 
-(defun to-html (document)
-  (common-html.emitter:node-to-html-string document))
+;; (defun to-html (document)
+;;   (common-html.emitter:node-to-html-string document))
 
 
 (defun from-markdown (text)
@@ -255,45 +255,30 @@
                (cond
                  (changed-node
                   (let ((cursor-node changed-node))
-                    (typecase new-content
-                      ;; If no markup was introduced, then we need
-                      ;; to replace a text content of the edited node.
-                      (string
-                       (log:warn "Replacing content inside node"
-                                 changed-node)
-                       (let ((edited-node
-                               (typecase changed-node
-                                 (common-doc:text-node changed-node)
-                                 (t
-                                  (first (common-doc:children changed-node))))))
-                         (cond
-                           ((typep edited-node 'common-doc:text-node)
-                            (setf (common-doc:text edited-node)
-                                  new-content))
-                           (t (log:error "Node is not TEXT-NODE" edited-node)))))
-                      ;; Otherwise, we need to replace the whole edited node
-                      ;; with a new CommonDoc element containing markup
-                      (t
-                       (log:warn "Replacing usual node"
-                                 changed-node)
-                       (replace-node (document widget)
-                                     changed-node
-                                     new-content)
-                       ;; We need to move cursor into our new node,
-                       ;; because CHNAGED-NODE will be removed from the DOM
-                       ;; after the widget's update:
-                       (multiple-value-bind (node new-cursor-position)
-                           (find-node-at-position new-content cursor-position)
-                         (unless node
-                           (log:error "Unable to find node for"
-                                      cursor-position
-                                      plain-text))
-                         (setf cursor-node
-                               node
-                               cursor-position
-                               new-cursor-position))))
+                    (log:warn "Replacing usual node"
+                              changed-node)
+                    (replace-node (document widget)
+                                  changed-node
+                                  new-content)
+                    ;; We need to move cursor into our new node,
+                    ;; because CHNAGED-NODE will be removed from the DOM
+                    ;; after the widget's update:
+                    (multiple-value-bind (node new-cursor-position)
+                        (find-node-at-position new-content cursor-position)
+                      (unless node
+                        (log:error "Unable to find node for"
+                                   cursor-position
+                                   plain-text))
+                      (setf cursor-node
+                            node
+                            cursor-position
+                            new-cursor-position))
 
-                    (reblocks/widget:update widget)
+
+                    (reblocks/commands:add-command 'update-text
+                                                   :replace-node-id (common-doc:reference changed-node)
+                                                   :with-html (zibaldone/html::to-html-string
+                                                               new-content))
                     (reblocks/commands:add-command 'set-cursor
                                                    :node-id (common-doc:reference cursor-node)
                                                    ;; We should figure out how to pass this from the frontend first
@@ -344,6 +329,27 @@
                           command-handlers
                           set-cursor)
                    set-cursor)
+             (setf (chain window
+                          command-handlers
+                          update-text)
+                   update-text)
+
+             (defun from-html (string)
+               (let* ((parser (ps:new -d-o-m-parser))
+                      (doc (chain parser
+                                  (parse-from-string string "text/html"))))
+                 (@ doc
+                    body
+                    first-child)))
+
+             (defun update-text (args)
+               (let* ((node-id (@ args replace-node-id))
+                      (node (chain document
+                                   (get-element-by-id node-id)))
+                      (html-string (@ args with-html))
+                      (html (from-html html-string)))
+                 (chain node
+                        (replace-with html))))
              
              (defun set-cursor (args)
                (chain console
@@ -401,9 +407,9 @@
                                (get-element-by-id edited-node-id)))
                       (text (@ edited-node inner-h-t-m-l))
                       (cursor-position ;; (chain window
-                                       ;;        (get-selection)
-                                       ;;        anchor-offset)
-                                       (caret-position))
+                        ;;        (get-selection)
+                        ;;        anchor-offset)
+                        (caret-position))
                       (args (create
                              :new-html text
                              :path path
