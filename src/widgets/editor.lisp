@@ -8,7 +8,9 @@
   (:import-from #:parenscript
                 #:create
                 #:chain
-                #:@))
+                #:@)
+  (:import-from #:bordeaux-threads
+                #:make-lock))
 (in-package #:zibaldone/widgets/editor)
 
 
@@ -23,29 +25,6 @@
                                       #'set-reference-id)
     (values document
             next-id)))
-
-
-;; (defclass markup-node (common-doc:content-node)
-;;   ())
-
-
-;; (defmethod zibaldone/html::to-html ((node markup-node))
-;;   (reblocks/html:with-html
-;;     ;; TODO: add a check that there is no nodes prohibited as a span container  
-;;     (:span :id (common-doc:reference node)
-;;            (mapc #'zibaldone/html::to-html
-;;                  (common-doc:children node)))))
-
-
-;; (defun make-span (content)
-;;   ;; This is a hack because common-html
-;;   ;; renders text nodes with metadata
-;;   ;; as spans even if metadata is an empty hash table
-;;   (let ((content (typecase content
-;;                    (string (common-doc:make-text content))
-;;                    (t content))))
-;;     (make-instance 'markup-node
-;;                    :children (uiop:ensure-list content))))
 
 
 (defun (setf next-id) (next-id document)
@@ -86,18 +65,14 @@
   (common-doc.format:parse-document (make-instance 'commondoc-markdown:markdown)
                                     text))
 
-(defun has-markup-p (paragraph)
-  (> (length (common-doc:children paragraph))
-     1))
-
-
 (reblocks/widget:defwidget editor ()
-  (;; (updated-content :type (or null string)
-   ;;                  :initform nil
-   ;;                  :accessor updated-content)
-   (document :type common-doc:document-node
+  ((document :type common-doc:document-node
              :initform (make-initial-document)
-             :reader document)))
+             :reader document)
+   (lock :initform (make-lock "Editor Update Lock")
+         :reader editor-lock)
+   (version :initform 0
+            :accessor content-version)))
 
 
 (defgeneric map-document (node function &optional depth)
@@ -148,6 +123,17 @@
            (if (eql node node-to-replace)
                new-node
                node)))
+    (map-document document #'do-replace)))
+
+(defun replace-node-content (document node-to-replace new-children)
+  (flet ((do-replace (node depth)
+           (declare (ignore depth))
+           (when (eql node node-to-replace)
+             (unless (typep node 'common-doc:content-node)
+               (error "Unable to replace content for node ~A" node))
+             (setf (common-doc:children node)
+                   new-children))
+           node))
     (map-document document #'do-replace)))
 
 
@@ -214,10 +200,13 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defvar *document* nil)
+(defvar *widget* nil)
 
 (defmethod reblocks/widget:render ((widget editor))
   (setf *document*
         (document widget))
+  (setf *widget*
+        widget)
   
   (labels ((prepare-new-content (text)
              (let ((paragraph (from-markdown text)))
@@ -225,83 +214,84 @@
                    (add-reference-ids paragraph :next-id (next-id (document widget)))
                  (setf (next-id (document widget))
                        next-id)
-                 (values paragraph))
+                 (values paragraph))))
+           (process-update (&key version new-html path cursor-position &allow-other-keys)
+             (bordeaux-threads:with-lock-held ((editor-lock widget))
+               (let* ((content-version (content-version widget))
+                      (new-version version)
+                      (diff (- new-version content-version)))
+                 (log:warn "Processing" diff))
                
-               ;; (cond
-               ;;   ((has-markup-p paragraph)
-               ;;    ;; Here we also need to assign
-               ;;    ;; a new references to our new nodes.
-               ;;    ;; but to do this, we need to store a maximum
-               ;;    ;; ID already used.
-               ;;    (let ((subtree (make-span
-               ;;                    (common-doc:children paragraph))))
-               ;;      (multiple-value-bind (subtree next-id)
-               ;;          (add-reference-ids subtree :next-id (next-id (document widget)))
-               ;;        (setf (next-id (document widget))
-               ;;              next-id)
-               ;;        (values subtree))))
-               ;;   (t
-               ;;    text))
-               ))
-           (process-update (&key new-html path cursor-position &allow-other-keys)
-             (log:warn "Processing" new-html path cursor-position)
-             (let* ((node-id (car (last path)))
-                    (changed-node (find-node-by-reference (document widget)
-                                                          node-id))
-                    (plain-text (remove-html-tags new-html))
-                    ;; Otherwise, we need to replace the text node's
-                    ;; content with a plain text
-                    (new-content (prepare-new-content plain-text)))
-               (cond
-                 (changed-node
-                  (let ((cursor-node changed-node))
-                    (log:warn "Replacing usual node"
-                              changed-node)
-                    (replace-node (document widget)
-                                  changed-node
-                                  new-content)
-                    ;; We need to move cursor into our new node,
-                    ;; because CHNAGED-NODE will be removed from the DOM
-                    ;; after the widget's update:
-                    (multiple-value-bind (node new-cursor-position)
-                        (find-node-at-position new-content cursor-position)
-                      (unless node
-                        (log:error "Unable to find node for"
-                                   cursor-position
-                                   plain-text))
-                      (setf cursor-node
-                            node
-                            cursor-position
-                            new-cursor-position))
+               (when (> version (content-version widget))
+                 (log:debug "Processing" new-html path cursor-position version)
+                 
+                 (setf (content-version widget)
+                       version)
+                 
+                 (let* ((node-id (car (last path)))
+                        (changed-node (find-node-by-reference (document widget)
+                                                              node-id))
+                        (plain-text (remove-html-tags new-html))
+                        ;; Otherwise, we need to replace the text node's
+                        ;; content with a plain text
+                        (new-content (prepare-new-content plain-text)))
+                   (cond
+                     (changed-node
+                      (let ((cursor-node changed-node))
+                        (log:debug "Replacing usual node"
+                                   changed-node)
+                        (replace-node-content (document widget)
+                                              changed-node
+                                              (common-doc:children new-content))
+                        ;; We need to move cursor into our new node,
+                        ;; because CHANGED-NODE will be removed from the DOM
+                        ;; after the widget's update:
+                        (multiple-value-bind (node new-cursor-position)
+                            (find-node-at-position
+                             changed-node
+                             ;; new-content
+                             cursor-position)
+                          (unless node
+                            (log:error "Unable to find node for"
+                                       cursor-position
+                                       plain-text))
+                          (setf cursor-node
+                                node
+                                cursor-position
+                                new-cursor-position))
 
 
-                    (reblocks/commands:add-command 'update-text
-                                                   :replace-node-id (common-doc:reference changed-node)
-                                                   :with-html (zibaldone/html::to-html-string
-                                                               new-content))
-                    (reblocks/commands:add-command 'set-cursor
-                                                   :node-id (common-doc:reference cursor-node)
-                                                   ;; We should figure out how to pass this from the frontend first
-                                                   :position cursor-position)))
-                 (t
-                  (log:error "Unable to find CommonDoc node with" node-id)))))
+                        (reblocks/commands:add-command 'update-text
+                                                       :version version
+                                                       :replace-node-id (common-doc:reference changed-node)
+                                                       :with-html (zibaldone/html::to-html-string
+                                                                   changed-node
+                                                                   ;; new-content
+                                                                   ))
+                        (reblocks/commands:add-command 'set-cursor
+                                                       :node-id (common-doc:reference cursor-node)
+                                                       ;; We should figure out how to pass this from the frontend first
+                                                       :position cursor-position)))
+                     (t
+                      (log:error "Unable to find CommonDoc node with" node-id)))))))
            (reset-text (&rest args)
              (declare (ignore args))
-             (setf (slot-value widget 'document)
-                   (make-initial-document))
-             (reblocks/widget:update widget)))
-    
+             (bordeaux-threads:with-lock-held ((editor-lock widget))
+               (setf (slot-value widget 'document)
+                     (make-initial-document)
+                     (content-version widget)
+                     0)
+               (reblocks/widget:update widget))))
+     
     (let ((action-code (reblocks/actions:make-action #'process-update)))
       (reblocks/html:with-html
-        (:h1 "Making HTML editor with Reblocks and Common Lisp")
+        (:h1 "Experimental HTML editor")
+        (:h2 "Using Common Lisp + Reblocks")
         (:div :class "content"
               :data-action-code action-code
+              :data-version 0
               :contenteditable ""
               :onload "setup()"
-              :oninput "updateEditor(event)"
-              :onclick "showPath()"
-              ;; :beforeinput "beforeInput(event)"
-
               (zibaldone/html::to-html (document widget)))
 
         (:p :id "debug"
@@ -343,39 +333,44 @@
                     first-child)))
 
              (defun update-text (args)
-               (let* ((node-id (@ args replace-node-id))
+               (let* ((version (@ args version))
+                      (node-id (@ args replace-node-id))
                       (node (chain document
                                    (get-element-by-id node-id)))
-                      (html-string (@ args with-html))
-                      (html (from-html html-string)))
-                 (chain node
-                        (replace-with html))))
+                      (editor (@ node parent-node parent-node))
+                      (current-version (@ editor dataset version)))
+                 
+                 (unless (< version current-version)
+                   (let* ((html-string (@ args with-html))
+                          (html (from-html html-string)))
+                     (chain node
+                            (replace-with html))))))
              
              (defun set-cursor (args)
-               (chain console
-                      (log "Here we should set a cursor back into the element" args))
                (let* ((element-id (@ args node-id))
                       (position (@ args position))
                       (element ;; element-id
                         (chain document
                                (get-element-by-id element-id)))
                       (range (chain document (create-range)))
-                      (sel (chain window (get-selection)))
-                      )
-                 
-                 (chain range
-                        (set-start
-                         (@ element
-                            child-nodes
-                            0)
-                         position))
-                 (chain range
-                        (collapse t))
-                 (chain sel
-                        (remove-all-ranges))
-                 (chain sel
-                        (add-range range))
-                 (chain console (log "Selection should be changed now to" sel))))
+                      (sel (chain window (get-selection))))
+
+                 (cond
+                   (element
+                    (chain range
+                           (set-start
+                            (@ element
+                               child-nodes
+                               0)
+                            position))
+                    (chain range
+                           (collapse t))
+                    (chain sel
+                           (remove-all-ranges))
+                    (chain sel
+                           (add-range range)))
+                   (t
+                    (chain console (log "Unable to find element to place cursor to" element-id))))))
 
              (defun take (n arr)
                (loop for item in arr
@@ -392,38 +387,36 @@
                              "P")
                        do (return (take (1+ idx) path))))
              
-             (defun update-editor (event)
-               (chain console
-                      (log "Handling oninput event"))
-               (chain console
-                      (log event))
-               (let* ((path (trim-path-to-nearest-paragraph
-                             (calculate-path)))
-                      (target (@ event target inner-h-t-m-l))
-                      (edited-node-id (@ path
-                                         (1- (@ path length))))
-                      (edited-node ;; (find-nearest-paragraph path)
-                        (chain document
-                               (get-element-by-id edited-node-id)))
-                      (text (@ edited-node inner-h-t-m-l))
-                      (cursor-position ;; (chain window
-                        ;;        (get-selection)
-                        ;;        anchor-offset)
-                        (caret-position))
-                      (args (create
-                             :new-html text
-                             :path path
-                             :cursor-position cursor-position)))
-                 (chain console
-                        (log edited-node))
+             (defun on-editor-input (event)
+               (let ((current-version
+                       (incf (@ event target dataset version))))
 
-                 ;; Before we send an action, we need to remember which
-                 ;; element was edited, to restore cursor position
-                 ;; after the widget will be updated.
-                 ;;
-                 ;; Or may be we might initiate update from the server-side?
-                 (initiate-action (@ event target dataset action-code)
-                                  (create :args args))))
+                 ;; (chain console
+                 ;;        (log "Handling oninput event" event current-version))
+
+                 (let* ((path (trim-path-to-nearest-paragraph
+                               (calculate-path)))
+                        (target (@ event target inner-h-t-m-l))
+                        (edited-node-id (@ path
+                                           (1- (@ path length))))
+                        (edited-node
+                          (chain document
+                                 (get-element-by-id edited-node-id)))
+                        (text (@ edited-node inner-h-t-m-l))
+                        (cursor-position (caret-position))
+                        (args (create
+                               :new-html text
+                               :path path
+                               :cursor-position cursor-position
+                               :version current-version)))
+
+                   ;; Before we send an action, we need to remember which
+                   ;; element was edited, to restore cursor position
+                   ;; after the widget will be updated.
+                   ;;
+                   ;; Or may be we might initiate update from the server-side?
+                   (initiate-action (@ event target dataset action-code)
+                                    (create :args args)))))
 
 
              (defun go-up-to (tag-name starting-node)
@@ -478,8 +471,6 @@
                         (node (@ selection
                                  base-node))
                         (path (make-path node)))
-                   (chain console
-                          (log selection))
                    path)))
              
              (defun show-path ()
@@ -492,37 +483,30 @@
                                               :caret position)))))))
 
              (defun setup ()
-               (chain console
-                      (log "Setting up the editor"))
+               ;; (chain console
+               ;;        (log "Setting up the editor" this))
                (chain this
-                      (add-event-listener "beforeinput"
-                                          before-input)))
+                      (add-event-listener "click"
+                                          show-path))
+               ;; (chain this
+               ;;        (add-event-listener "beforeinput"
+               ;;                            before-input))
+               (chain this
+                      (add-event-listener "input"
+                                          on-editor-input)))
              (defun before-input (event)
-               ;; (save-selection)
-
-               (chain console
-                      (log "Handling before-input event"))
-               
-               ;; (chain console
-               ;;        (log event))
-
-               ;; (chain console
-               ;;        (log (chain event
-               ;;                    (get-target-ranges))))
-
-               ;; (chain console
-               ;;        (log (chain event
-               ;;                    (get-target-ranges)
-               ;;                    0
-               ;;                    start-container)))
-               
+               ;; Probably, we'll need this event handler
+               ;; to process paragraph or bullet items processing
                ;; (chain event
                ;;        (prevent-default))
                )))
+         
          (reblocks-lass:make-dependency
            '(body
              (.editor
-              (.content :white-space pre-wrap)
+              (.content
+               :white-space pre-wrap
+               :outline none)
               (.bold :font-weight bold)
               ;; (.markup :display none)
               )
