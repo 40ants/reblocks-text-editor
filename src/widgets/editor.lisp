@@ -256,6 +256,35 @@
                                    :with-html (zibaldone/html::to-html-string
                                                paragraph))))
 
+(defun create-new-paragraph (widget markdown-text)
+  (prepare-new-content widget markdown-text))
+
+
+(defgeneric insert-node (container node &key after)
+  (:documentation "Inserts one node after another."))
+
+
+(defmethod insert-node ((widget reblocks/widget:widget) node &key (after (alexandria:required-argument)))
+  (insert-node (document widget) node :after after)
+  (reblocks/commands:add-command 'insert-node
+                                 :version (content-version widget)
+                                 :after-node-id (common-doc:reference after)
+                                 :html (zibaldone/html::to-html-string node))
+  (values))
+
+(defmethod insert-node ((document common-doc:document-node) node &key (after (alexandria:required-argument)))
+  (flet ((find-and-insert (current-node depth)
+           (declare (ignore depth))
+           (when (typep current-node 'common-doc:content-node)
+             (let ((found-pos (position after
+                                        (common-doc:children current-node))))
+               (when found-pos
+                 (push node
+                       (cdr (nthcdr found-pos
+                                    (common-doc:children current-node)))))))))
+    (map-document document #'find-and-insert))
+  (values))
+
 
 (defun process-usual-update (widget path new-html cursor-position)
   (let* ((paragraph (find-changed-node widget path))
@@ -264,6 +293,23 @@
       (update-paragraph-content widget paragraph plain-text)
       (ensure-cursor-position-is-correct paragraph
                                          cursor-position))))
+
+
+(defun insert-paragraph (widget path new-html cursor-position)
+  (let ((changed-paragraph (find-changed-node widget path)))
+    (when changed-paragraph
+      (let* ((plain-text (remove-html-tags new-html))
+             (text-before-cursor (subseq plain-text 0 cursor-position))
+             (text-after-cursor (subseq plain-text cursor-position))
+             (new-paragraph (create-new-paragraph widget text-after-cursor)))
+        (update-paragraph-content widget changed-paragraph text-before-cursor)
+        (insert-node widget
+                     new-paragraph
+                     :after changed-paragraph)
+        (ensure-cursor-position-is-correct new-paragraph
+                                           ;; When newline is inserted
+                                           ;; the cursor will be at the beginning
+                                           0)))))
 
 
 (defmethod reblocks/widget:render ((widget editor))
@@ -282,7 +328,8 @@
 
                  (cond
                    ((string= change-type
-                             "insert-paragraph"))
+                             "insert-paragraph")
+                    (insert-paragraph widget path new-html cursor-position))
                    (t (process-usual-update widget path new-html cursor-position))))))
            
            (reset-text (&rest args)
@@ -334,6 +381,10 @@
                           command-handlers
                           update-text)
                    update-text)
+             (setf (chain window
+                          command-handlers
+                          insert-node)
+                   insert-node)
 
              (defun from-html (string)
                (let* ((parser (ps:new -d-o-m-parser))
@@ -356,6 +407,22 @@
                           (html (from-html html-string)))
                      (chain node
                             (replace-with html))))))
+             
+             (defun insert-node (args)
+               (let* ((version (@ args version))
+                      (after-node-id (@ args after-node-id))
+                      (after-node (chain document
+                                         (get-element-by-id after-node-id)))
+                      (editor (@ after-node parent-node parent-node))
+                      (current-version (@ editor dataset version)))
+                 
+                 (unless (< version current-version)
+                   (let* ((html-string (@ args html))
+                          (html (from-html html-string)))
+                     (chain console
+                            (log "INSERTING " html-string))
+                     (chain after-node
+                            (insert-adjacent-h-t-m-l "afterend" html-string))))))
              
              (defun set-cursor (args)
                (let* ((element-id (@ args node-id))
