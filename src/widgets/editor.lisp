@@ -383,7 +383,7 @@
         (:h2 "Using Common Lisp + Reblocks")
         (:div :class "content"
               :data-action-code action-code
-              :data-version 0
+              :data-version (content-version widget)
               :contenteditable ""
               :onload "setup()"
               (zibaldone/html::to-html (document widget)))
