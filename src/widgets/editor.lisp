@@ -435,7 +435,8 @@
                    ((string= change-type
                              "join-with-prev-paragraph")
                     (join-with-prev-paragraph widget path new-html cursor-position))
-                   (t (process-usual-update widget path new-html cursor-position))))))
+                   (t
+                    (process-usual-update widget path new-html cursor-position))))))
            
            (reset-text (&rest args)
              (declare (ignore args))
@@ -573,7 +574,9 @@
                     (chain sel
                            (add-range range)))
                    (t
-                    (chain console (log "Unable to find element to place cursor to" element-id))))))
+                    (chain console (log "Unable to find element to place cursor to" element-id))))
+
+                 (update-active-paragraph)))
 
              (defun take (n arr)
                (loop for item in arr
@@ -624,6 +627,14 @@
                        then (@ node parent-node)
                      when (= (@ node tag-name)
                              tag-name)
+                       do (return node)))
+             
+             (defun get-editor-node (starting-node)
+               (loop for node = starting-node
+                       then (@ node parent-node)
+                     when (chain node
+                                 class-list
+                                 (contains "editor"))
                        do (return node)))
 
 
@@ -686,17 +697,48 @@
                                      (stringify
                                       (create :path path
                                               :caret position)))))))
+
+             (defvar +prev-current-node+ nil)
+             
+             (defun update-active-paragraph ()
+               (let* ((selection (chain window
+                                        (get-selection)))
+                      (node (@ selection
+                               base-node)))
+                 (unless (eql +prev-current-node+
+                              node)
+                   (let* ((current-paragraph (go-up-to "P" node))
+                          (editor (get-editor-node current-paragraph))
+                          (all-paragraphs (chain editor
+                                                 (get-elements-by-tag-name "P"))))
+                     (loop for p in all-paragraphs
+                           do (chain p
+                                     class-list
+                                     (remove "active")))
+                     (chain current-paragraph
+                            class-list
+                            (add "active"))))))
+
+             (defun on-caret-change ()
+               (show-path)
+               (update-active-paragraph))
+             
+             (defun on-keydown ()
+               (update-active-paragraph))
              
              (defun setup ()
                (chain this
                       (add-event-listener "click"
-                                          show-path))
+                                          on-caret-change))
                (chain this
                       (add-event-listener "beforeinput"
                                           before-input)) 
                (chain this
                       (add-event-listener "input"
-                                          on-editor-input)))
+                                          on-editor-input))
+               (chain this
+                      (add-event-listener "keydown"
+                                          on-keydown)))
 
              (defun on-editor-input (event)
                ;; (chain console
@@ -726,24 +768,12 @@
          (reblocks-lass:make-dependency
            '(body
              (.editor
+              (.content :outline none)
               (.content
-               :white-space pre-wrap
-               :outline none)
+               (p
+                :white-space pre-wrap))
               (.bold :font-weight bold)
-              ;; (.markup :display none)
-              )
-
-             ;; (.editor
-             ;;  (:focus
-             ;;   :outline none
-             ;;   (.markup :display inline-block)))
-             
-             ;; (.editor
-             ;;  ((:and p :focus-within)
-             ;;   :background red))
-
-             ;; ((:and .editor :focus-within)
-             ;;  :background yellow)
-
-             ))
+              (.markup :display none)
+              ((:and p .active)
+               (.markup :display inline-block)))))
          (call-next-method)))
