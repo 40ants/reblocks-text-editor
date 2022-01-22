@@ -2,6 +2,7 @@
   (:use #:cl)
   (:import-from #:reblocks)
   (:import-from #:common-doc)
+  (:import-from #:commondoc-markdown)
   (:import-from #:anaphora
                 #:it
                 #:alet
@@ -60,6 +61,11 @@
            :class (html-class node)
            (mapc #'to-html (uiop:ensure-list
                             (common-doc:text node))))))
+
+
+(defmethod to-html ((node commondoc-markdown/raw-html:raw-inline-html))
+  (reblocks/html:with-html
+    (:raw (commondoc-markdown/raw-html:html node))))
 
 
 (defmethod to-html ((node common-doc:bold))

@@ -14,6 +14,11 @@
 (in-package #:zibaldone/widgets/editor)
 
 
+(defparameter +zero-width-space+
+  "​"
+  "This string contains a character which corresponds to a &ZeroWidthSpace; HTML entity.")
+
+
 (defun add-reference-ids (document &key (next-id 1))
   (flet ((set-reference-id (node depth)
            (declare (ignore depth))
@@ -62,8 +67,21 @@
 
 
 (defun from-markdown (text)
-  (common-doc.format:parse-document (make-instance 'commondoc-markdown:markdown)
-                                    text))
+  (let ((node (common-doc.format:parse-document (make-instance 'commondoc-markdown:markdown)
+                                                text)))
+    ;; This is a workaround for a bug inside commondoc-markdown or 3bmd
+    ;; When it parses an empty text, it returns an empty CONTENT-NODE,
+    ;; But we need a PARAGRAPH.
+    (cond
+      ((and (typep node 'common-doc:content-node)
+            (null (common-doc:children node)))
+       (common-doc:make-paragraph
+        (list
+         ;; Without this hack with &ZeroWidthSpace;
+         ;; we'll be unable to put cursor into a new paragraph :(
+         (common-doc:make-text +zero-width-space+))))
+      (t node))))
+
 
 (reblocks/widget:defwidget editor ()
   ((document :type common-doc:document-node
@@ -145,8 +163,13 @@
                    node)
              
              (etypecase node
-               (common-doc:text-node
-                (let* ((text (common-doc:text node))
+               ((or common-doc:text-node
+                    commondoc-markdown/raw-html:raw-inline-html)
+                (let* ((text (typecase node
+                               (commondoc-markdown/raw-html:raw-inline-html
+                                (commondoc-markdown/raw-html:html node))
+                               (common-doc:text-node
+                                (common-doc:text node))))
                        (content-length
                          (length text)))
                   (setf last-visited-node-content-length
@@ -157,9 +180,8 @@
                       (return-from find-node-at-position
                         (values node
                                 cursor-position))
-                      (progn (log:info "Skipping" text content-length)
-                             (decf cursor-position
-                                   content-length)))))
+                      (decf cursor-position
+                            content-length))))
                (common-doc:content-node
                 ;; (setf last-visited-node-content-length
                 ;;       (1+
@@ -170,9 +192,18 @@
                 ;;   (log:info "Skipping" (markup-length node) "for" node)
                 ;;   (decf cursor-position
                 ;;         (markup-length node)))
-                
-                (mapc #'recursive-find
-                      (common-doc:children node))
+
+                (cond
+                  ((common-doc:children node)
+                   (mapc #'recursive-find
+                         (common-doc:children node)))
+
+                  ;; The case, when cursor points to the empty
+                  ;; node, like a new paragraph with no content:
+                  ((zerop cursor-position)
+                   (return-from find-node-at-position
+                     (values node
+                             cursor-position))))
                 
                 ;; (unless (zerop (markup-length node))
                 ;;   (log:info "Skipping" (markup-length node) "for" node)
@@ -192,8 +223,13 @@
 
 
 (defun remove-html-tags (html-string)
-  (cl-ppcre:regex-replace-all "<[^>]+>" html-string
-                              ""))
+  (let* ((result (cl-ppcre:regex-replace-all "<[^>]+>" html-string
+                                             "")))
+    (if (string= result +zero-width-space+)
+        result
+        (cl-ppcre:regex-replace-all +zero-width-space+
+                                    result
+                                    ""))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; 
 ;; This is our BACKEND code doing most business logic ;;
@@ -427,7 +463,7 @@
              (defun set-cursor (args)
                (let* ((element-id (@ args node-id))
                       (position (@ args position))
-                      (element ;; element-id
+                      (element
                         (chain document
                                (get-element-by-id element-id)))
                       (range (chain document (create-range)))
