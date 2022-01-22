@@ -66,6 +66,13 @@
 ;;   (common-html.emitter:node-to-html-string document))
 
 
+(defun to-markdown (node)
+  (let ((commondoc-markdown/emitter:*emit-section-anchors* nil)
+        (zibaldone/html::*render-markup*))
+    (common-doc.format:emit-to-string (make-instance 'commondoc-markdown:markdown)
+                                      node)))
+
+
 (defun from-markdown (text)
   (let ((node (common-doc.format:parse-document (make-instance 'commondoc-markdown:markdown)
                                                 text)))
@@ -299,6 +306,9 @@
 (defgeneric insert-node (container node &key after)
   (:documentation "Inserts one node after another."))
 
+(defgeneric delete-node (container node)
+  (:documentation "Deletes a node from container"))
+
 
 (defmethod insert-node ((widget reblocks/widget:widget) node &key (after (alexandria:required-argument)))
   (insert-node (document widget) node :after after)
@@ -320,6 +330,38 @@
                                     (common-doc:children current-node)))))))))
     (map-document document #'find-and-insert))
   (values))
+
+
+(defmethod delete-node ((widget reblocks/widget:widget) node)
+  (delete-node (document widget) node)
+  (reblocks/commands:add-command 'delete-node
+                                 :version (content-version widget)
+                                 :node-id (common-doc:reference node))
+  (values))
+
+(defmethod delete-node ((document common-doc:document-node) node)
+  (flet ((find-and-delete (current-node depth)
+           (declare (ignore depth))
+           (when (typep current-node 'common-doc:content-node)
+             (setf (common-doc:children current-node)
+                   (remove node (common-doc:children current-node))))))
+    (map-document document #'find-and-delete))
+  (values))
+
+
+(defun find-previous-sibling (document node)
+  (flet ((find-node (current-node depth)
+           (declare (ignore depth))
+           (when (typep current-node 'common-doc:content-node)
+             (let ((found-pos (position node
+                                        (common-doc:children current-node))))
+               (when (and found-pos
+                          (not (zerop found-pos)))
+                 (return-from find-previous-sibling
+                   (nth (1- found-pos)
+                        (common-doc:children current-node))))))))
+    (map-document document #'find-node)
+    (values)))
 
 
 (defun process-usual-update (widget path new-html cursor-position)
@@ -348,6 +390,30 @@
                                            0)))))
 
 
+(defun join-with-prev-paragraph (widget path new-html cursor-position)
+  (let ((paragraph-to-delete (find-changed-node widget path))
+        (text-to-append (remove-html-tags new-html)))
+    (log:error "Joining paragraph" path new-html cursor-position paragraph-to-delete)
+    (when paragraph-to-delete
+      (let* ((previous-paragraph (find-previous-sibling (document widget)
+                                                        paragraph-to-delete)))
+        (when previous-paragraph
+          (let* ((first-part (string-trim '(#\Newline #\Space #\Tab)
+                                          (to-markdown previous-paragraph)))
+                 (full-text (concatenate 'string
+                                         first-part
+                                         text-to-append)))
+            (update-paragraph-content widget previous-paragraph full-text)
+            (delete-node widget
+                         paragraph-to-delete)
+            (ensure-cursor-position-is-correct previous-paragraph
+                                               ;; The cursor now should be
+                                               ;; somewhere in the middle of the new
+                                               ;; paragraph. Right at the end of the
+                                               ;; paragraph, we've joined our current one:
+                                               (length first-part))))))))
+
+
 (defmethod reblocks/widget:render ((widget editor))
   (setf *document*
         (document widget))
@@ -366,6 +432,9 @@
                    ((string= change-type
                              "insert-paragraph")
                     (insert-paragraph widget path new-html cursor-position))
+                   ((string= change-type
+                             "join-with-prev-paragraph")
+                    (join-with-prev-paragraph widget path new-html cursor-position))
                    (t (process-usual-update widget path new-html cursor-position))))))
            
            (reset-text (&rest args)
@@ -421,6 +490,10 @@
                           command-handlers
                           insert-node)
                    insert-node)
+             (setf (chain window
+                          command-handlers
+                          delete-node)
+                   delete-node)
 
              (defun from-html (string)
                (let* ((parser (ps:new -d-o-m-parser))
@@ -459,6 +532,22 @@
                             (log "INSERTING " html-string))
                      (chain after-node
                             (insert-adjacent-h-t-m-l "afterend" html-string))))))
+             
+             (defun delete-node (args)
+               (let* ((version (@ args version))
+                      (node-id (@ args node-id))
+                      (node (chain document
+                                   (get-element-by-id node-id)))
+                      (editor (@ node parent-node parent-node))
+                      (current-version (@ editor dataset version)))
+                 
+                 (unless (< version current-version)
+                   (let* ((html-string (@ args html))
+                          (html (from-html html-string)))
+                     (chain console
+                            (log "Deleting node" node-id))
+                     (chain node
+                            (remove))))))
              
              (defun set-cursor (args)
                (let* ((element-id (@ args node-id))
@@ -622,6 +711,14 @@
                  
                  (when (= type "insertParagraph")
                    (change-text event "insert-paragraph")
+                   
+                   (chain event
+                          (prevent-default)))
+
+                 (when (and (= type "deleteContentBackward")
+                            (= (caret-position)
+                               0))
+                   (change-text event "join-with-prev-paragraph")
                    
                    (chain event
                           (prevent-default)))))))

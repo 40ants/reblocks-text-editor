@@ -121,17 +121,24 @@
                                       (common-doc:reference node)
                                       side))))
 
+(defvar *render-markup* t)
+
+
 (defun markup-p (node)
   (typep node 'markup))
 
 
 (defmethod common-doc:children :around ((node common-doc:italic))
-  (append (list (make-markup node "left"))
-          (call-next-method)
-          (list (make-markup node "right"))))
+  (if *render-markup*
+      (append (list (make-markup node "left"))
+              (call-next-method)
+              (list (make-markup node "right")))
+      (call-next-method)))
 
 
 (defmethod common-doc:children :around ((node common-doc:bold))
-  (append (list (make-markup node "left"))
-          (call-next-method)
-          (list (make-markup node "right"))))
+  (if *render-markup*
+      (append (list (make-markup node "left"))
+              (call-next-method)
+              (list (make-markup node "right")))
+      (call-next-method)))
