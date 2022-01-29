@@ -10,7 +10,9 @@
                 #:chain
                 #:@)
   (:import-from #:bordeaux-threads
-                #:make-lock))
+                #:make-lock)
+  (:import-from #:alexandria
+                #:curry))
 (in-package #:zibaldone/widgets/editor)
 
 
@@ -41,6 +43,16 @@
 (defun next-id (document)
   (gethash "next-id"
            (common-doc:metadata document)))
+
+
+(defun get-next-reference-id (widget)
+  (prog1 (format nil "el~A"
+                 (next-id
+                  (document widget)))
+    (incf
+     (next-id
+      (document widget)))))
+
 
 (defun make-initial-document ()
   (let ((doc (common-doc:make-content
@@ -101,16 +113,18 @@
             :accessor content-version)))
 
 
-(defun %map-node-with-children (cnode function &optional (depth 0))
+(defun %map-node-with-children (cnode function &optional (depth 0) make-bindings)
   (let ((possibly-new-node (funcall function cnode depth)))
     (when (eql possibly-new-node cnode)
       (setf (common-doc:children cnode)
             (loop for child in (common-doc:children cnode)
                   unless (zibaldone/html::markup-p child)
-                    collect (map-document child function (1+ depth)))))
+                    collect (map-document child function
+                                          (1+ depth)
+                                          make-bindings))))
     (values possibly-new-node)))
 
-(defgeneric map-document (node function &optional depth)
+(defgeneric map-document (node function &optional depth make-bindings)
   (:documentation "Map a function recursively (depth-first),
                    possibly replacing nodes with ones a FUNCTION will return.
 
@@ -120,19 +134,30 @@
                    If a new node was returned, the function will not
                    be applied to its content.")
 
-  (:method ((doc common-doc:document) function &optional (depth 0))
+  (:method :around (doc function &optional (depth 0) make-bindings)
+    (multiple-value-bind (vars vals)
+        (when make-bindings
+          (funcall make-bindings doc depth))
+      (progv vars vals
+        (call-next-method))))
+  
+  (:method ((doc common-doc:document) function &optional (depth 0) make-bindings)
     (setf (common-doc:children doc)
           (loop for child in (common-doc:children doc)
                 unless (zibaldone/html::markup-p child)
-                  collect (map-document child function (1+ depth))))
+                  collect (map-document child function
+                                        (1+ depth)
+                                        make-bindings)))
     (values doc))
 
-  (:method ((cnode common-doc:content-node) function &optional (depth 0))
-    (%map-node-with-children cnode function depth))
-  (:method ((cnode common-doc:base-list) function &optional (depth 0))
-    (%map-node-with-children cnode function depth))
+  (:method ((cnode common-doc:content-node) function &optional (depth 0) make-bindings)
+    (%map-node-with-children cnode function depth make-bindings))
 
-  (:method ((dnode common-doc:document-node) function &optional (depth 0))
+  (:method ((cnode common-doc:base-list) function &optional (depth 0) make-bindings)
+    (%map-node-with-children cnode function depth make-bindings))
+
+  (:method ((dnode common-doc:document-node) function &optional (depth 0) make-bindings)
+    (declare (ignore make-bindings))
     (funcall function dnode depth)))
 
 
@@ -271,6 +296,54 @@
       (log:warn "Changed node should be a whole PARAGRAPH."))
 
     (values node)))
+
+(defun select-outer-node-of-type (root-node node searched-type)
+  "Searched a nearest outer list item."
+  (let ((current-outer-item nil))
+    (declare (special current-outer-item))
+    
+    (flet ((do-find (current-node depth)
+             (declare (ignore depth))
+             (when (eql current-node node)
+               (return-from select-outer-node-of-type
+                 current-outer-item))
+             (values current-node))
+           (make-binding (current-node depth)
+             (declare (ignore depth))
+             (when (typep current-node
+                          searched-type)
+               (values (list 'current-outer-item)
+                       (list current-node)))))
+      (map-document root-node
+                    #'do-find 0 #'make-binding)
+      ;; When nothing found
+      (values))))
+
+
+(defun select-outer-list (root-node node)
+  "Searched a nearest outer list of any type."
+  (select-outer-node-of-type root-node node 'common-doc:base-list))
+
+(defun select-outer-list-item (root-node node)
+  "Searched a nearest outer list item."
+  (select-outer-node-of-type root-node node 'common-doc:list-item))
+
+
+(defun select-siblings-next-to (root-node node)
+  (flet ((do-find (current-node depth)
+           (declare (ignore depth))
+           (when (typep current-node
+                        'node-with-children)
+             (let* ((children (common-doc:children current-node))
+                    (pos (position node children)))
+               (when pos
+                 (return-from select-siblings-next-to
+                   (subseq children (1+ pos))))))
+           (values node)))
+    (map-document root-node
+                  #'do-find 0)
+    ;; When we found nothing, return NIL
+    (values)))
 
 
 (defun ensure-cursor-position-is-correct (changed-node cursor-position)
@@ -473,6 +546,33 @@
                        version)
 
                  (cond
+                   ((string= change-type
+                             "split")
+                    (split-paragraph widget path new-html cursor-position)
+                    
+                    (let* ((changed-paragraph
+                             (find-changed-node widget path))
+                           (list-item
+                             (select-outer-list-item (document widget) changed-paragraph)))
+
+                      (when list-item
+                        (let ((next-paragraphs
+                                (select-siblings-next-to list-item changed-paragraph)))
+                          (mapcar (curry #'delete-node widget)
+                                  next-paragraphs)
+                          
+                          (let ((new-list-item
+                                  (common-doc:make-list-item next-paragraphs
+                                                             :reference (get-next-reference-id widget))))
+                            (insert-node widget
+                                         new-list-item
+                                         :after list-item)
+                            ;; When a new list item is inserted
+                            ;; the cursor should be placed on the
+                            ;; first paragraph.
+                            (ensure-cursor-position-is-correct (first next-paragraphs)
+                                                               0)))
+                        )))
                    ((string= change-type
                              "split-paragraph")
                     (split-paragraph widget path new-html cursor-position))
@@ -780,8 +880,23 @@
                (show-path)
                (update-active-paragraph))
              
-             (defun on-keydown ()
-               (update-active-paragraph))
+             (defun on-keydown (event)
+               (chain console
+                      (log "on-keydown event" event))
+               (cond
+                 ((and (= (@ event key-code)
+                          13)
+                       (@ event alt-key))
+                  ;; When inside a list item,
+                  ;; this split will add a new item.
+                  ;; Otherwise, it works as a usual Enter,
+                  ;; adding a new paragraph:
+                  (change-text event "split")
+                   
+                  (chain event
+                         (prevent-default)))
+                 (t
+                  (update-active-paragraph))))
              
              (defun setup ()
                (chain this
