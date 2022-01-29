@@ -29,18 +29,31 @@
       it)))
 
 
+(defparameter *common-doc-key-to-html-tag*
+  '(("item" . "li")
+    ("list" . "ul")))
+
+
 (defmethod to-html ((node common-doc:content-node))
   (let* ((node-type (class-of node))
          (tag (or (loop for key being the hash-key of common-doc::*registry*
                           using (hash-value value)
                         when (eql value node-type)
-                          do (return key))
+                          do (return (or (alexandria:assoc-value *common-doc-key-to-html-tag* key
+                                                                 :test #'string-equal)
+                                         key)))
                   "div")))
     (reblocks/html:with-html
       ;; TODO: add a check that there is no nodes prohibited as a span's content
       (:tag :name tag
             :id (common-doc:reference node)
             (to-html (common-doc:children node))))))
+
+(defmethod to-html ((node common-doc:unordered-list))
+  (reblocks/html:with-html
+    (:ul
+     :id (common-doc:reference node)
+     (to-html (common-doc:children node)))))
 
 
 (defmethod to-html ((nodes list))

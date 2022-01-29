@@ -21,7 +21,8 @@
 
 (defun add-reference-ids (document &key (next-id 1))
   (flet ((set-reference-id (node depth)
-           (declare (ignore depth))
+           ;; (declare (ignore depth))
+           (log:error "Setting id for" node depth)
            (setf (common-doc:reference node)
                  (format nil "el~A" next-id))
            (incf next-id)
@@ -100,6 +101,15 @@
             :accessor content-version)))
 
 
+(defun %map-node-with-children (cnode function &optional (depth 0))
+  (let ((possibly-new-node (funcall function cnode depth)))
+    (when (eql possibly-new-node cnode)
+      (setf (common-doc:children cnode)
+            (loop for child in (common-doc:children cnode)
+                  unless (zibaldone/html::markup-p child)
+                    collect (map-document child function (1+ depth)))))
+    (values possibly-new-node)))
+
 (defgeneric map-document (node function &optional depth)
   (:documentation "Map a function recursively (depth-first),
                    possibly replacing nodes with ones a FUNCTION will return.
@@ -118,13 +128,9 @@
     (values doc))
 
   (:method ((cnode common-doc:content-node) function &optional (depth 0))
-    (let ((possibly-new-node (funcall function cnode depth)))
-      (when (eql possibly-new-node cnode)
-        (setf (common-doc:children cnode)
-              (loop for child in (common-doc:children cnode)
-                    unless (zibaldone/html::markup-p child)
-                      collect (map-document child function (1+ depth)))))
-      (values possibly-new-node)))
+    (%map-node-with-children cnode function depth))
+  (:method ((cnode common-doc:base-list) function &optional (depth 0))
+    (%map-node-with-children cnode function depth))
 
   (:method ((dnode common-doc:document-node) function &optional (depth 0))
     (funcall function dnode depth)))
@@ -154,7 +160,7 @@
   (flet ((do-replace (node depth)
            (declare (ignore depth))
            (when (eql node node-to-replace)
-             (unless (typep node 'common-doc:content-node)
+             (unless (typep node 'node-with-children)
                (error "Unable to replace content for node ~A" node))
              (setf (common-doc:children node)
                    new-children))
@@ -189,7 +195,7 @@
                                 cursor-position))
                       (decf cursor-position
                             content-length))))
-               (common-doc:content-node
+               (node-with-children
                 ;; (setf last-visited-node-content-length
                 ;;       (1+
                 ;;        (* (markup-length node)
@@ -286,18 +292,37 @@
                   cursor-position
                   (zibaldone/html::to-html-string changed-node))))))
 
-(defun update-paragraph-content (widget paragraph plain-text)
+(defun update-paragraph-content (widget paragraph plain-text cursor-position)
   ;; Here we are updating our document tree
   (let ((new-content (prepare-new-content widget plain-text)))
-    (replace-node-content (document widget)
-                          paragraph
-                          (common-doc:children new-content))
+    (etypecase new-content
+      (common-doc:paragraph
+       (replace-node-content (document widget)
+                             paragraph
+                             (common-doc:children new-content))
 
-    (reblocks/commands:add-command 'update-text
-                                   :version (content-version widget)
-                                   :replace-node-id (common-doc:reference paragraph)
-                                   :with-html (zibaldone/html::to-html-string
-                                               paragraph))))
+       (reblocks/commands:add-command 'update-text
+                                      :version (content-version widget)
+                                      :replace-node-id (common-doc:reference paragraph)
+                                      :with-html (zibaldone/html::to-html-string
+                                                  paragraph))
+       (values paragraph cursor-position))
+      (common-doc:unordered-list
+       (let ((list-node new-content))
+         (replace-node (document widget)
+                       paragraph
+                       list-node)
+
+         (reblocks/commands:add-command 'insert-node
+                                        :version (content-version widget)
+                                        :after-node-id (common-doc:reference paragraph)
+                                        :html (zibaldone/html::to-html-string
+                                               list-node))
+         (reblocks/commands:add-command 'delete-node
+                                        :version (content-version widget)
+                                        :node-id (common-doc:reference paragraph))
+         (values list-node
+                 (decf cursor-position 2)))))))
 
 (defun create-new-paragraph (widget markdown-text)
   (prepare-new-content widget markdown-text))
@@ -318,16 +343,25 @@
                                  :html (zibaldone/html::to-html-string node))
   (values))
 
+
+(deftype node-with-children ()
+  '(or common-doc:content-node
+    common-doc:base-list))
+
+
 (defmethod insert-node ((document common-doc:document-node) node &key (after (alexandria:required-argument)))
   (flet ((find-and-insert (current-node depth)
            (declare (ignore depth))
-           (when (typep current-node 'common-doc:content-node)
+           (when (typep current-node 'node-with-children)
              (let ((found-pos (position after
                                         (common-doc:children current-node))))
+               ;; (log:error "Checking current-node" current-node found-pos)
                (when found-pos
                  (push node
                        (cdr (nthcdr found-pos
-                                    (common-doc:children current-node)))))))))
+                                    (common-doc:children current-node)))))))
+           ;; Returning the same node to continue searching
+           (values current-node)))
     (map-document document #'find-and-insert))
   (values))
 
@@ -342,9 +376,11 @@
 (defmethod delete-node ((document common-doc:document-node) node)
   (flet ((find-and-delete (current-node depth)
            (declare (ignore depth))
-           (when (typep current-node 'common-doc:content-node)
+           (when (typep current-node 'node-with-children)
              (setf (common-doc:children current-node)
-                   (remove node (common-doc:children current-node))))))
+                   (remove node (common-doc:children current-node))))
+           ;; Returning the same node to continue searching
+           (values current-node)))
     (map-document document #'find-and-delete))
   (values))
 
@@ -352,14 +388,16 @@
 (defun find-previous-sibling (document node)
   (flet ((find-node (current-node depth)
            (declare (ignore depth))
-           (when (typep current-node 'common-doc:content-node)
+           (when (typep current-node 'node-with-children)
              (let ((found-pos (position node
                                         (common-doc:children current-node))))
                (when (and found-pos
                           (not (zerop found-pos)))
                  (return-from find-previous-sibling
                    (nth (1- found-pos)
-                        (common-doc:children current-node))))))))
+                        (common-doc:children current-node))))))
+           ;; Returning the same node to continue searching
+           (values current-node)))
     (map-document document #'find-node)
     (values)))
 
@@ -367,20 +405,26 @@
 (defun process-usual-update (widget path new-html cursor-position)
   (let* ((paragraph (find-changed-node widget path))
          (plain-text (remove-html-tags new-html)))
-    (when paragraph
-      (update-paragraph-content widget paragraph plain-text)
-      (ensure-cursor-position-is-correct paragraph
-                                         cursor-position))))
+    (cond
+      (paragraph
+       (log:error "Updating paragraph at" path)
+       (multiple-value-bind (current-node cursor-position)
+           (update-paragraph-content widget paragraph plain-text cursor-position)
+
+         (ensure-cursor-position-is-correct current-node
+                                            cursor-position)))
+      (t
+       (log:warn "Cant find paragraph at" path)))))
 
 
-(defun insert-paragraph (widget path new-html cursor-position)
+(defun split-paragraph (widget path new-html cursor-position)
   (let ((changed-paragraph (find-changed-node widget path)))
     (when changed-paragraph
       (let* ((plain-text (remove-html-tags new-html))
              (text-before-cursor (subseq plain-text 0 cursor-position))
              (text-after-cursor (subseq plain-text cursor-position))
              (new-paragraph (create-new-paragraph widget text-after-cursor)))
-        (update-paragraph-content widget changed-paragraph text-before-cursor)
+        (update-paragraph-content widget changed-paragraph text-before-cursor cursor-position)
         (insert-node widget
                      new-paragraph
                      :after changed-paragraph)
@@ -403,7 +447,7 @@
                  (full-text (concatenate 'string
                                          first-part
                                          text-to-append)))
-            (update-paragraph-content widget previous-paragraph full-text)
+            (update-paragraph-content widget previous-paragraph full-text cursor-position)
             (delete-node widget
                          paragraph-to-delete)
             (ensure-cursor-position-is-correct previous-paragraph
@@ -430,8 +474,8 @@
 
                  (cond
                    ((string= change-type
-                             "insert-paragraph")
-                    (insert-paragraph widget path new-html cursor-position))
+                             "split-paragraph")
+                    (split-paragraph widget path new-html cursor-position))
                    ((string= change-type
                              "join-with-prev-paragraph")
                     (join-with-prev-paragraph widget path new-html cursor-position))
@@ -509,8 +553,11 @@
                       (node-id (@ args replace-node-id))
                       (node (chain document
                                    (get-element-by-id node-id)))
-                      (editor (@ node parent-node parent-node))
+                      (editor (get-editor-content-node node))
                       (current-version (@ editor dataset version)))
+
+                 (chain console
+                        (log "Updating text" editor current-version))
                  
                  (unless (< version current-version)
                    (let* ((html-string (@ args with-html))
@@ -523,7 +570,7 @@
                       (after-node-id (@ args after-node-id))
                       (after-node (chain document
                                          (get-element-by-id after-node-id)))
-                      (editor (@ after-node parent-node parent-node))
+                      (editor (get-editor-content-node after-node))
                       (current-version (@ editor dataset version)))
                  
                  (unless (< version current-version)
@@ -539,7 +586,7 @@
                       (node-id (@ args node-id))
                       (node (chain document
                                    (get-element-by-id node-id)))
-                      (editor (@ node parent-node parent-node))
+                      (editor (get-editor-content-node node))
                       (current-version (@ editor dataset version)))
                  
                  (unless (< version current-version)
@@ -625,6 +672,7 @@
              (defun go-up-to (tag-name starting-node)
                (loop for node = starting-node
                        then (@ node parent-node)
+                     while (not (null node))
                      when (= (@ node tag-name)
                              tag-name)
                        do (return node)))
@@ -635,6 +683,14 @@
                      when (chain node
                                  class-list
                                  (contains "editor"))
+                       do (return node)))
+
+             (defun get-editor-content-node (starting-node)
+               (loop for node = starting-node
+                       then (@ node parent-node)
+                     when (chain node
+                                 class-list
+                                 (contains "content"))
                        do (return node)))
 
 
@@ -686,7 +742,8 @@
                                           (get-selection)))
                         (node (@ selection
                                  base-node))
-                        (path (make-path node)))
+                        (path (when node
+                                (make-path node))))
                    path)))
              
              (defun show-path ()
@@ -708,7 +765,7 @@
                  (unless (eql +prev-current-node+
                               node)
                    (let* ((current-paragraph (go-up-to "P" node))
-                          (editor (get-editor-node current-paragraph))
+                          (editor (get-editor-content-node current-paragraph))
                           (all-paragraphs (chain editor
                                                  (get-elements-by-tag-name "P"))))
                      (loop for p in all-paragraphs
@@ -752,7 +809,7 @@
                         (log "Before input" event))
                  
                  (when (= type "insertParagraph")
-                   (change-text event "insert-paragraph")
+                   (change-text event "split-paragraph")
                    
                    (chain event
                           (prevent-default)))
