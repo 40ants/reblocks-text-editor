@@ -401,10 +401,10 @@
   (prepare-new-content widget markdown-text))
 
 
-(defgeneric insert-node (container node &key after)
+(defgeneric insert-node (widget-or-document node &key after)
   (:documentation "Inserts one node after another."))
 
-(defgeneric delete-node (container node)
+(defgeneric delete-node (widget-or-document node)
   (:documentation "Deletes a node from container"))
 
 
@@ -506,29 +506,57 @@
                                            ;; the cursor will be at the beginning
                                            0)))))
 
+(defun join-list-items (widget previous-list-item current-list-item)
+  (let ((items-to-move (common-doc:children current-list-item)))
+    (loop for last-node = (car (last (common-doc:children previous-list-item)))
+            then item
+          for item in items-to-move
+          do (insert-node widget item :after last-node))
+
+    (delete-node widget current-list-item)
+    (ensure-cursor-position-is-correct (first items-to-move)
+                                       0)))
+
 
 (defun join-with-prev-paragraph (widget path new-html cursor-position)
+  "This functions joins the current paragraph with the previous.
+
+   If the current paragraph is a first one inside the list item, then
+   whole content of this list item is joined with the content of the
+   previous list-item."
   (let ((paragraph-to-delete (find-changed-node widget path))
         (text-to-append (remove-html-tags new-html)))
     (log:error "Joining paragraph" path new-html cursor-position paragraph-to-delete)
     (when paragraph-to-delete
       (let* ((previous-paragraph (find-previous-sibling (document widget)
                                                         paragraph-to-delete)))
-        (when previous-paragraph
-          (let* ((first-part (string-trim '(#\Newline #\Space #\Tab)
-                                          (to-markdown previous-paragraph)))
-                 (full-text (concatenate 'string
-                                         first-part
-                                         text-to-append)))
-            (update-paragraph-content widget previous-paragraph full-text cursor-position)
-            (delete-node widget
-                         paragraph-to-delete)
-            (ensure-cursor-position-is-correct previous-paragraph
-                                               ;; The cursor now should be
-                                               ;; somewhere in the middle of the new
-                                               ;; paragraph. Right at the end of the
-                                               ;; paragraph, we've joined our current one:
-                                               (length first-part))))))))
+        (cond
+          (previous-paragraph
+           (let* ((first-part (string-trim '(#\Newline #\Space #\Tab)
+                                           (to-markdown previous-paragraph)))
+                  (full-text (concatenate 'string
+                                          first-part
+                                          text-to-append)))
+             (update-paragraph-content widget previous-paragraph full-text cursor-position)
+             (delete-node widget
+                          paragraph-to-delete)
+             (ensure-cursor-position-is-correct previous-paragraph
+                                                ;; The cursor now should be
+                                                ;; somewhere in the middle of the new
+                                                ;; paragraph. Right at the end of the
+                                                ;; paragraph, we've joined our current one:
+                                                (length first-part))))
+          ;; Part where we might join two list-items
+          (t
+           (let ((current-list-item (select-outer-list-item (document widget)
+                                                            paragraph-to-delete)))
+             (when current-list-item
+               (let ((previous-list-item (find-previous-sibling (document widget)
+                                                                current-list-item)))
+                 (when previous-list-item
+                   (join-list-items widget
+                                    previous-list-item
+                                    current-list-item)))))))))))
 
 
 (defmethod reblocks/widget:render ((widget editor))
@@ -884,6 +912,7 @@
                (chain console
                       (log "on-keydown event" event))
                (cond
+                 ;; Enter
                  ((and (= (@ event key-code)
                           13)
                        (@ event alt-key))
