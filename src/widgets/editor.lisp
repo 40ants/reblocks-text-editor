@@ -512,8 +512,10 @@
   (let ((changed-paragraph (find-changed-node widget path)))
     (when changed-paragraph
       (let* ((plain-text (remove-html-tags new-html))
-             (text-before-cursor (subseq plain-text 0 cursor-position))
-             (text-after-cursor (subseq plain-text cursor-position))
+             (text-before-cursor (subseq plain-text 0 (min cursor-position
+                                                           (length plain-text))))
+             (text-after-cursor (subseq plain-text (min cursor-position
+                                                        (length plain-text))))
              (new-paragraph (create-new-paragraph widget text-after-cursor)))
         (update-paragraph-content widget changed-paragraph text-before-cursor cursor-position)
         (insert-node widget
