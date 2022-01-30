@@ -507,6 +507,32 @@ Second Line.
     (values)))
 
 
+(defun find-previous-paragraph (document node)
+  "This function searches for the previous paragraph even if it is indide a bunch of nested lists.
+
+   For example, when called on such document:
+
+   * Level 1
+     * Level2 paragraph 1
+
+       Level2 paragraph 2
+
+   Level0 paragraph
+
+   When NODE is the \"Level0 paragraph\" function should return:
+   \"Level2 paragraph 2\"."
+  (let ((node (find-previous-sibling document node)))
+    (labels ((recurse (node)
+               (etypecase node
+                 (common-doc:paragraph
+                  (return-from find-previous-paragraph node))
+                 (node-with-children
+                  (recurse (car (last (common-doc:children node)))))
+                 (t
+                  (return-from find-previous-paragraph nil)))))
+      (recurse node))))
+
+
 (defun process-usual-update (widget path new-html cursor-position)
   (let* ((paragraph (find-changed-node widget path))
          (plain-text (remove-html-tags new-html)))
@@ -600,10 +626,12 @@ Second Line.
         (text-to-append (remove-html-tags new-html)))
     (log:error "Joining paragraph" path new-html cursor-position paragraph-to-delete)
     (when paragraph-to-delete
-      (let* ((previous-paragraph (find-previous-sibling (document widget)
-                                                        paragraph-to-delete)))
+      (let* ((previous-paragraph (find-previous-paragraph (document widget)
+                                                          paragraph-to-delete)))
         (cond
           (previous-paragraph
+           (check-type previous-paragraph common-doc:paragraph)
+           
            (let* ((first-part (to-markdown previous-paragraph))
                   (full-text (concatenate 'string
                                           first-part
