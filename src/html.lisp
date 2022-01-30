@@ -1,4 +1,4 @@
-(uiop:define-package #:zibaldone/html
+(uiop:define-package #:reblocks-text-editor/html
   (:use #:cl)
   (:import-from #:reblocks)
   (:import-from #:common-doc)
@@ -9,7 +9,7 @@
                 #:awhen)
   (:import-from #:alexandria
                 #:alist-hash-table))
-(in-package #:zibaldone/html)
+(in-package #:reblocks-text-editor/html)
 
 
 (defgeneric to-html (node)

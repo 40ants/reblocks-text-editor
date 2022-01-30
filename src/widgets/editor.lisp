@@ -1,10 +1,10 @@
-(uiop:define-package #:zibaldone/widgets/editor
+(uiop:define-package #:reblocks-text-editor/widgets/editor
   (:use #:cl)
   (:import-from #:common-doc)
   (:import-from #:common-html)
   (:import-from #:reblocks-parenscript)
   (:import-from #:reblocks-lass)
-  (:import-from #:zibaldone/html)
+  (:import-from #:reblocks-text-editor/html)
   (:import-from #:parenscript
                 #:create
                 #:chain
@@ -13,7 +13,7 @@
                 #:make-lock)
   (:import-from #:alexandria
                 #:curry))
-(in-package #:zibaldone/widgets/editor)
+(in-package #:reblocks-text-editor/widgets/editor)
 
 
 (defparameter +zero-width-space+
