@@ -393,9 +393,7 @@
                  (type-of list-node))
             (let ((new-children (common-doc:children list-node)))
               (append-children widget previous-node new-children)
-              (reblocks/commands:add-command 'delete-node
-                                             :version (content-version widget)
-                                             :node-id (common-doc:reference paragraph))
+              (delete-node widget paragraph)
               (values (first new-children)
                       0)))
            ;; Just insert a new list into the document
