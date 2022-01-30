@@ -381,21 +381,39 @@
                                                   paragraph))
        (values paragraph cursor-position))
       (common-doc:unordered-list
-       (let ((list-node new-content))
-         (replace-node (document widget)
-                       paragraph
-                       list-node)
+       (let ((list-node new-content)
+             (previous-node (find-previous-sibling (document widget) paragraph)))
 
-         (reblocks/commands:add-command 'insert-node
-                                        :version (content-version widget)
-                                        :after-node-id (common-doc:reference paragraph)
-                                        :html (zibaldone/html::to-html-string
-                                               list-node))
-         (reblocks/commands:add-command 'delete-node
-                                        :version (content-version widget)
-                                        :node-id (common-doc:reference paragraph))
-         (values list-node
-                 (decf cursor-position 2)))))))
+         (cond
+           ;; If user enters "* " in a beginning of the paragraph,
+           ;; following a list, we should attach this new list item
+           ;; to the existing list instead of creating a new one and inserting
+           ;; it into the document
+           ((eql (type-of previous-node)
+                 (type-of list-node))
+            (let ((new-children (common-doc:children list-node)))
+              (append-children widget previous-node new-children)
+              (reblocks/commands:add-command 'delete-node
+                                             :version (content-version widget)
+                                             :node-id (common-doc:reference paragraph))
+              (values (first new-children)
+                      0)))
+           ;; Just insert a new list into the document
+           (t
+            (replace-node (document widget)
+                          paragraph
+                          list-node)
+
+            (reblocks/commands:add-command 'insert-node
+                                           :version (content-version widget)
+                                           :after-node-id (common-doc:reference paragraph)
+                                           :html (zibaldone/html::to-html-string
+                                                  list-node))
+            (reblocks/commands:add-command 'delete-node
+                                           :version (content-version widget)
+                                           :node-id (common-doc:reference paragraph))
+            (values list-node
+                    (decf cursor-position 2)))))))))
 
 (defun create-new-paragraph (widget markdown-text)
   (prepare-new-content widget markdown-text))
@@ -506,13 +524,19 @@
                                            ;; the cursor will be at the beginning
                                            0)))))
 
+(defun append-children (widget to-node nodes-to-append)
+  "Appends NODES-TO-APPEND to the container TO-NODE"
+  (check-type to-node node-with-children)
+  
+  (loop for last-node = (car (last (common-doc:children to-node)))
+          then item
+        for item in nodes-to-append
+        do (insert-node widget item :after last-node)))
+
+
 (defun join-list-items (widget previous-list-item current-list-item)
   (let ((items-to-move (common-doc:children current-list-item)))
-    (loop for last-node = (car (last (common-doc:children previous-list-item)))
-            then item
-          for item in items-to-move
-          do (insert-node widget item :after last-node))
-
+    (append-children widget previous-list-item items-to-move)
     (delete-node widget current-list-item)
     (ensure-cursor-position-is-correct (first items-to-move)
                                        0)))
