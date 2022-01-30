@@ -17,14 +17,13 @@
 
 
 (defparameter +zero-width-space+
-  "​"
+  (coerce '(#\Zero_Width_Space) 'string)
   "This string contains a character which corresponds to a &ZeroWidthSpace; HTML entity.")
 
 
 (defun add-reference-ids (document &key (next-id 1))
   (flet ((set-reference-id (node depth)
-           ;; (declare (ignore depth))
-           (log:error "Setting id for" node depth)
+           (declare (ignore depth))
            (setf (common-doc:reference node)
                  (format nil "el~A" next-id))
            (incf next-id)
@@ -55,19 +54,15 @@
 
 
 (defun make-initial-document ()
-  (let ((doc (common-doc:make-content
-              (list (common-doc:make-paragraph 
-                     (list 
-                      (common-doc:make-text "Hello ")
-                      (common-doc:make-bold
-                       (common-doc:make-text
-                        "Lisp"))
-                      (common-doc:make-text " World!")))
-                    
-                    (common-doc:make-paragraph 
-                     (list 
-                      (common-doc:make-text "Second line"))))
-              :metadata (make-hash-table :test 'equal))))
+  (let ((doc (from-markdown "
+Hello **Lisp** World!
+
+Second Line.
+
+")))
+    (setf (common-doc:metadata doc)
+          (make-hash-table :test 'equal))
+    
     (multiple-value-bind (doc next-id)
         (add-reference-ids doc)
       (setf (next-id doc)
@@ -79,11 +74,17 @@
 ;;   (common-html.emitter:node-to-html-string document))
 
 
+(defun trim-spaces (string)
+  (string-trim '(#\Newline #\Space #\Tab #\Zero_Width_Space)
+               string))
+
+
 (defun to-markdown (node)
-  (let ((commondoc-markdown/emitter:*emit-section-anchors* nil)
-        (zibaldone/html::*render-markup*))
-    (common-doc.format:emit-to-string (make-instance 'commondoc-markdown:markdown)
-                                      node)))
+  (let* ((commondoc-markdown/emitter:*emit-section-anchors* nil)
+         (zibaldone/html::*render-markup*)
+         (result (common-doc.format:emit-to-string (make-instance 'commondoc-markdown:markdown)
+                                                   node)))
+    (trim-spaces result)))
 
 
 (defun from-markdown (text)
@@ -365,12 +366,28 @@
                   cursor-position
                   (zibaldone/html::to-html-string changed-node))))))
 
+(defun is-empty-p (node)
+  "Returns T if the plain content of the node is equivalent to an empty string."
+  (check-type node common-doc:document-node)
+  (string= (to-markdown node)
+           ""))
+
+(defun is-inside-the-list (document node)
+  (check-type document common-doc:document-node)
+  (check-type node common-doc:document-node)
+  (when (select-outer-list document node)
+    t))
+
+
 (defun update-paragraph-content (widget paragraph plain-text cursor-position)
   ;; Here we are updating our document tree
-  (let ((new-content (prepare-new-content widget plain-text)))
+  (let ((new-content (prepare-new-content widget plain-text))
+        (previous-node (find-previous-sibling (document widget) paragraph))
+        (document (document widget)))
+
     (etypecase new-content
       (common-doc:paragraph
-       (replace-node-content (document widget)
+       (replace-node-content document
                              paragraph
                              (common-doc:children new-content))
 
@@ -381,9 +398,7 @@
                                                   paragraph))
        (values paragraph cursor-position))
       (common-doc:unordered-list
-       (let ((list-node new-content)
-             (previous-node (find-previous-sibling (document widget) paragraph)))
-
+       (let ((list-node new-content))
          (cond
            ;; If user enters "* " in a beginning of the paragraph,
            ;; following a list, we should attach this new list item
@@ -412,6 +427,7 @@
                                            :node-id (common-doc:reference paragraph))
             (values list-node
                     (decf cursor-position 2)))))))))
+
 
 (defun create-new-paragraph (widget markdown-text)
   (prepare-new-content widget markdown-text))
@@ -510,19 +526,42 @@
   (let ((changed-paragraph (find-changed-node widget path)))
     (when changed-paragraph
       (let* ((plain-text (remove-html-tags new-html))
+             (document (document widget))
+             ;; (previous-node (find-previous-sibling document changed-paragraph))
              (text-before-cursor (subseq plain-text 0 (min cursor-position
                                                            (length plain-text))))
              (text-after-cursor (subseq plain-text (min cursor-position
                                                         (length plain-text))))
              (new-paragraph (create-new-paragraph widget text-after-cursor)))
-        (update-paragraph-content widget changed-paragraph text-before-cursor cursor-position)
-        (insert-node widget
-                     new-paragraph
-                     :after changed-paragraph)
-        (ensure-cursor-position-is-correct new-paragraph
-                                           ;; When newline is inserted
-                                           ;; the cursor will be at the beginning
-                                           0)))))
+
+        (cond
+          ((and (typep changed-paragraph 'common-doc:paragraph)
+                (string= (trim-spaces plain-text) "")
+                (is-inside-the-list document changed-paragraph))
+           (let ((list-node (select-outer-list document changed-paragraph)))
+             ;; Here using a DOCUMENT because
+             ;; we need not to generate a JS command.
+             ;; Node will be removed automatically when it is inserted
+             ;; to another place. Probalby, we have to reproduce this
+             ;; behaviour for CommonDoc document too:
+             (delete-node widget changed-paragraph)
+             ;; We are moving the previous node and ignoring
+             ;; the new one to not create unnecessary empty paragraphs.
+             ;; The empty paragraph will be extracted and placed
+             ;; next after the list where it was before:
+             (insert-node widget changed-paragraph
+                          :after list-node)
+             (ensure-cursor-position-is-correct changed-paragraph
+                                                0)))
+          (t
+           (update-paragraph-content widget changed-paragraph text-before-cursor cursor-position)
+           (insert-node widget
+                        new-paragraph
+                        :after changed-paragraph)
+           (ensure-cursor-position-is-correct new-paragraph
+                                              ;; When newline is inserted
+                                              ;; the cursor will be at the beginning
+                                              0)))))))
 
 (defun append-children (widget to-node nodes-to-append)
   "Appends NODES-TO-APPEND to the container TO-NODE"
@@ -556,8 +595,7 @@
                                                         paragraph-to-delete)))
         (cond
           (previous-paragraph
-           (let* ((first-part (string-trim '(#\Newline #\Space #\Tab)
-                                           (to-markdown previous-paragraph)))
+           (let* ((first-part (to-markdown previous-paragraph))
                   (full-text (concatenate 'string
                                           first-part
                                           text-to-append)))
