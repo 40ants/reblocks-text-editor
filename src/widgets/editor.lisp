@@ -81,7 +81,7 @@ Second Line.
 
 (defun to-markdown (node)
   (let* ((commondoc-markdown/emitter:*emit-section-anchors* nil)
-         (zibaldone/html::*render-markup*)
+         (reblocks-text-editor/html::*render-markup*)
          (result (common-doc.format:emit-to-string (make-instance 'commondoc-markdown:markdown)
                                                    node)))
     (trim-spaces result)))
@@ -119,7 +119,7 @@ Second Line.
     (when (eql possibly-new-node cnode)
       (setf (common-doc:children cnode)
             (loop for child in (common-doc:children cnode)
-                  unless (zibaldone/html::markup-p child)
+                  unless (reblocks-text-editor/html::markup-p child)
                     collect (map-document child function
                                           (1+ depth)
                                           make-bindings))))
@@ -145,7 +145,7 @@ Second Line.
   (:method ((doc common-doc:document) function &optional (depth 0) make-bindings)
     (setf (common-doc:children doc)
           (loop for child in (common-doc:children doc)
-                unless (zibaldone/html::markup-p child)
+                unless (reblocks-text-editor/html::markup-p child)
                   collect (map-document child function
                                         (1+ depth)
                                         make-bindings)))
@@ -364,7 +364,7 @@ Second Line.
       (t
        (log:error "Unable to find node for"
                   cursor-position
-                  (zibaldone/html::to-html-string changed-node))))))
+                  (reblocks-text-editor/html::to-html-string changed-node))))))
 
 (defun is-empty-p (node)
   "Returns T if the plain content of the node is equivalent to an empty string."
@@ -394,7 +394,7 @@ Second Line.
        (reblocks/commands:add-command 'update-text
                                       :version (content-version widget)
                                       :replace-node-id (common-doc:reference paragraph)
-                                      :with-html (zibaldone/html::to-html-string
+                                      :with-html (reblocks-text-editor/html::to-html-string
                                                   paragraph))
        (values paragraph cursor-position))
       (common-doc:unordered-list
@@ -420,7 +420,7 @@ Second Line.
             (reblocks/commands:add-command 'insert-node
                                            :version (content-version widget)
                                            :after-node-id (common-doc:reference paragraph)
-                                           :html (zibaldone/html::to-html-string
+                                           :html (reblocks-text-editor/html::to-html-string
                                                   list-node))
             (reblocks/commands:add-command 'delete-node
                                            :version (content-version widget)
@@ -445,7 +445,7 @@ Second Line.
   (reblocks/commands:add-command 'insert-node
                                  :version (content-version widget)
                                  :after-node-id (common-doc:reference after)
-                                 :html (zibaldone/html::to-html-string node))
+                                 :html (reblocks-text-editor/html::to-html-string node))
   (values))
 
 
@@ -727,7 +727,7 @@ Second Line.
               :data-version (content-version widget)
               :contenteditable ""
               :onload "setup()"
-              (zibaldone/html::to-html (document widget)))
+              (reblocks-text-editor/html::to-html (document widget)))
 
         (:p :id "debug"
             "Path will be shown here.")
