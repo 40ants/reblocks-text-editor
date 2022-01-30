@@ -855,23 +855,27 @@
                                         (get-selection)))
                       (node (@ selection
                                base-node))
-                      (paragraph (go-up-to "P" node))
-                      (range-1 (chain selection
-                                      (get-range-at 0)))
-                      (range-2 (chain range-1
-                                      (clone-range))))
-                 (chain console
-                        (log "Current selection"
-                             selection))
-                 
-                 (chain range-2
-                        (select-node-contents paragraph))
-                 (chain range-2
-                        (set-end (@ range-1 end-container)
-                                 (@ range-1 end-offset)))
-                 (chain range-2
-                        (to-string)
-                        length)))
+                      (paragraph (go-up-to "P" node)))
+                 ;; If there is no any range, then we can't
+                 ;; determine a cursor position:
+                 (when (> (@ selection range-count)
+                          0)
+                   (let* ((range-1 (chain selection
+                                          (get-range-at 0)))
+                          (range-2 (chain range-1
+                                          (clone-range))))
+                     (chain console
+                            (log "Current selection"
+                                 selection))
+                     
+                     (chain range-2
+                            (select-node-contents paragraph))
+                     (chain range-2
+                            (set-end (@ range-1 end-container)
+                                     (@ range-1 end-offset)))
+                     (chain range-2
+                            (to-string)
+                            length)))))
              
              (defun calculate-path ()
                "Returns a #ids of the currently selected node and all its parents,
