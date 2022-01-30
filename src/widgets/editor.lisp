@@ -522,6 +522,13 @@ Second Line.
        (log:warn "Cant find paragraph at" path)))))
 
 
+(defun is-last-child-p (container node)
+  (check-type container node-with-children)
+  (check-type node common-doc:document-node)
+  (= (length (member node (common-doc:children container)))
+     1))
+
+
 (defun split-paragraph (widget path new-html cursor-position)
   (let ((changed-paragraph (find-changed-node widget path)))
     (when changed-paragraph
@@ -537,7 +544,9 @@ Second Line.
         (cond
           ((and (typep changed-paragraph 'common-doc:paragraph)
                 (string= (trim-spaces plain-text) "")
-                (is-inside-the-list document changed-paragraph))
+                (is-inside-the-list document changed-paragraph)
+                (is-last-child-p (select-outer-list document changed-paragraph)
+                                 (select-outer-list-item document changed-paragraph)))
            (let ((list-node (select-outer-list document changed-paragraph)))
              ;; Here using a DOCUMENT because
              ;; we need not to generate a JS command.
