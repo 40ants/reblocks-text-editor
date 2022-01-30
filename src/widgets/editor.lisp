@@ -305,12 +305,14 @@ Second Line.
     
     (flet ((do-find (current-node depth)
              (declare (ignore depth))
+             
              (when (eql current-node node)
                (return-from select-outer-node-of-type
                  current-outer-item))
              (values current-node))
            (make-binding (current-node depth)
              (declare (ignore depth))
+
              (when (typep current-node
                           searched-type)
                (values (list 'current-outer-item)
@@ -555,7 +557,7 @@ Second Line.
      1))
 
 
-(defun split-paragraph (widget path new-html cursor-position)
+(defun split-paragraph (widget path new-html cursor-position &key dont-escape-from-list-item)
   (let ((changed-paragraph (find-changed-node widget path)))
     (when changed-paragraph
       (let* ((plain-text (remove-html-tags new-html))
@@ -568,17 +570,18 @@ Second Line.
              (new-paragraph (create-new-paragraph widget text-after-cursor)))
 
         (cond
-          ((and (typep changed-paragraph 'common-doc:paragraph)
-                (string= (trim-spaces plain-text) "")
-                (is-inside-the-list document changed-paragraph)
-                (is-last-child-p (select-outer-list document changed-paragraph)
-                                 (select-outer-list-item document changed-paragraph)))
+          ((and
+            ;; When user presses Option + Enter, we want to stay within
+            ;; the list just add another list item. Thus we have
+            ;; to skip this part and do the usual
+            ;; paragraph splitting:
+            (not dont-escape-from-list-item)
+            (typep changed-paragraph 'common-doc:paragraph)
+            (string= (trim-spaces plain-text) "")
+            (is-inside-the-list document changed-paragraph)
+            (is-last-child-p (select-outer-list document changed-paragraph)
+                             (select-outer-list-item document changed-paragraph)))
            (let ((list-node (select-outer-list document changed-paragraph)))
-             ;; Here using a DOCUMENT because
-             ;; we need not to generate a JS command.
-             ;; Node will be removed automatically when it is inserted
-             ;; to another place. Probalby, we have to reproduce this
-             ;; behaviour for CommonDoc document too:
              (delete-node widget changed-paragraph)
              ;; We are moving the previous node and ignoring
              ;; the new one to not create unnecessary empty paragraphs.
@@ -673,9 +676,14 @@ Second Line.
                        version)
 
                  (cond
+                   ;; This operation is similar to "split-paragraph"
+                   ;; but it splits a paragraph and created a new list
+                   ;; item when the cursor is in the list item.
                    ((string= change-type
                              "split")
-                    (split-paragraph widget path new-html cursor-position)
+                    (split-paragraph widget path new-html cursor-position
+                                     :dont-escape-from-list-item t)
+
                     
                     (let* ((changed-paragraph
                              (find-changed-node widget path))
@@ -697,9 +705,9 @@ Second Line.
                             ;; When a new list item is inserted
                             ;; the cursor should be placed on the
                             ;; first paragraph.
-                            (ensure-cursor-position-is-correct (first next-paragraphs)
-                                                               0)))
-                        )))
+                            (when next-paragraphs
+                              (ensure-cursor-position-is-correct (first next-paragraphs)
+                                                                 0)))))))
                    ((string= change-type
                              "split-paragraph")
                     (split-paragraph widget path new-html cursor-position))
