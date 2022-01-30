@@ -421,7 +421,7 @@ Second Line.
 
             (reblocks/commands:add-command 'insert-node
                                            :version (content-version widget)
-                                           :after-node-id (common-doc:reference paragraph)
+                                           :relative-to-node-id (common-doc:reference paragraph)
                                            :html (reblocks-text-editor/html::to-html-string
                                                   list-node))
             (reblocks/commands:add-command 'delete-node
@@ -435,18 +435,28 @@ Second Line.
   (prepare-new-content widget markdown-text))
 
 
-(defgeneric insert-node (widget-or-document node &key after)
+(defgeneric insert-node (widget-or-document node &key relative-to position)
   (:documentation "Inserts one node after another."))
 
 (defgeneric delete-node (widget-or-document node)
   (:documentation "Deletes a node from container"))
 
 
-(defmethod insert-node ((widget reblocks/widget:widget) node &key (after (alexandria:required-argument)))
-  (insert-node (document widget) node :after after)
+(defmethod insert-node ((widget reblocks/widget:widget) node &key (relative-to (alexandria:required-argument))
+                                                               (position :after))
+  (check-type relative-to common-doc:document-node)
+  
+  (insert-node (document widget) node
+               :relative-to relative-to
+               :position position)
   (reblocks/commands:add-command 'insert-node
                                  :version (content-version widget)
-                                 :after-node-id (common-doc:reference after)
+                                 :relative-to-node-id (common-doc:reference relative-to)
+                                 :position (ecase position
+                                             (:after "afterend")
+                                             (:before "beforebegin")
+                                             (:as-last-child "beforeend")
+                                             (:as-first-child "afterbegin"))
                                  :html (reblocks-text-editor/html::to-html-string node))
   (values))
 
@@ -456,20 +466,57 @@ Second Line.
     common-doc:base-list))
 
 
-(defmethod insert-node ((document common-doc:document-node) node &key (after (alexandria:required-argument)))
-  (flet ((find-and-insert (current-node depth)
-           (declare (ignore depth))
-           (when (typep current-node 'node-with-children)
-             (let ((found-pos (position after
-                                        (common-doc:children current-node))))
-               ;; (log:error "Checking current-node" current-node found-pos)
-               (when found-pos
-                 (push node
-                       (cdr (nthcdr found-pos
-                                    (common-doc:children current-node)))))))
-           ;; Returning the same node to continue searching
-           (values current-node)))
-    (map-document document #'find-and-insert))
+(defmethod insert-node ((document common-doc:document-node) node &key (relative-to (alexandria:required-argument))
+                                                                   (position :after))
+  (unless (member position '(:before :after :as-first-child :as-last-child))
+    (error "POSITION argument should one of: :before :after :as-first-child :as-last-child. You gave ~S" position))
+  
+  (let ((nodes-to-insert
+          (uiop:ensure-list node)))
+    (flet ((find-and-insert (current-node depth)
+             (declare (ignore depth))
+             (when (typep current-node 'node-with-children)
+               (symbol-macrolet ((current-children
+                                   (common-doc:children current-node)))
+                 (let ((found-pos (position relative-to
+                                            current-children)))
+                   (when found-pos
+                     (case position
+                       (:after
+                        (setf current-children
+                              ;; Here we are using append to support
+                              ;; the case when NODE is a list of nodes
+                              (append
+                               (subseq current-children 0 (1+ found-pos))
+                               nodes-to-insert
+                               (subseq current-children (1+ found-pos)))))
+                       (:before
+                        (setf current-children
+                              ;; Here we are using append to support
+                              ;; the case when NODE is a list of nodes
+                              (append
+                               (subseq current-children 0 found-pos)
+                               nodes-to-insert
+                               (subseq current-children found-pos)))))))))
+             ;; Returning the same node to continue searching
+             (values current-node)))
+      (case position
+        ((or :before :after)
+         (map-document document #'find-and-insert))
+        (:as-first-child
+         (unless (typep relative-to 'node-with-children)
+           (error "I can insert children only into container nodes. ~A node has a wrong type."
+                  relative-to))
+         (setf (common-doc:children relative-to)
+               (append nodes-to-insert
+                       (common-doc:children relative-to))))
+        (:as-last-child
+         (unless (typep relative-to 'node-with-children)
+           (error "I can insert children only into container nodes. ~A node has a wrong type."
+                  relative-to))
+         (setf (common-doc:children relative-to)
+               (append (common-doc:children relative-to)
+                       nodes-to-insert))))))
   (values))
 
 
@@ -588,14 +635,14 @@ Second Line.
              ;; The empty paragraph will be extracted and placed
              ;; next after the list where it was before:
              (insert-node widget changed-paragraph
-                          :after list-node)
+                          :relative-to list-node)
              (ensure-cursor-position-is-correct changed-paragraph
                                                 0)))
           (t
            (update-paragraph-content widget changed-paragraph text-before-cursor cursor-position)
            (insert-node widget
                         new-paragraph
-                        :after changed-paragraph)
+                        :relative-to changed-paragraph)
            (ensure-cursor-position-is-correct new-paragraph
                                               ;; When newline is inserted
                                               ;; the cursor will be at the beginning
@@ -604,11 +651,10 @@ Second Line.
 (defun append-children (widget to-node nodes-to-append)
   "Appends NODES-TO-APPEND to the container TO-NODE"
   (check-type to-node node-with-children)
-  
-  (loop for last-node = (car (last (common-doc:children to-node)))
-          then item
-        for item in nodes-to-append
-        do (insert-node widget item :after last-node)))
+
+  (insert-node widget nodes-to-append
+               :relative-to to-node
+               :position :as-last-child))
 
 
 (defun join-list-items (widget previous-list-item current-list-item)
@@ -626,13 +672,21 @@ Second Line.
    whole content of this list item is joined with the content of the
    previous list-item."
   (let ((paragraph-to-delete (find-changed-node widget path))
-        (text-to-append (remove-html-tags new-html)))
+        (text-to-append (remove-html-tags new-html))
+        (document (document widget)))
     (log:error "Joining paragraph" path new-html cursor-position paragraph-to-delete)
+    
     (when paragraph-to-delete
-      (let* ((previous-paragraph (find-previous-paragraph (document widget)
-                                                          paragraph-to-delete)))
+      (let* ((previous-paragraph (find-previous-paragraph document
+                                                          paragraph-to-delete))
+             (current-list-item (select-outer-list-item document paragraph-to-delete))
+             (previous-list-item (when current-list-item
+                                   (find-previous-sibling document current-list-item))))
         (cond
+          ;; Here we are having a previous paragraph and want
+          ;; to join it with the current:
           (previous-paragraph
+           (log:error "Joining with the previous paragraph")
            (check-type previous-paragraph common-doc:paragraph)
            
            (let* ((first-part (to-markdown previous-paragraph))
@@ -648,13 +702,37 @@ Second Line.
                                                 ;; paragraph. Right at the end of the
                                                 ;; paragraph, we've joined our current one:
                                                 (length first-part))))
+          ;; Here we have no an another paragraph before the current
+          ;; one and also, we are in the first list item.
+          ;; In this case, we want to extract the whole content
+          ;; of the current list item and place it before the current
+          ;; list.
+          ((and current-list-item
+                (not previous-list-item))
+           (log:error "Extracting content of the first list item")
+           
+           (let ((current-list (select-outer-list document current-list-item))
+                 (items-to-move (common-doc:children current-list-item)))
+             (delete-node widget current-list-item)
+             (insert-node widget items-to-move
+                          :relative-to current-list
+                          :position :before)
+             ;; If list where we was is empty now, there is no reason
+             ;; to keep it inside the document:
+             (when (zerop (length (common-doc:children current-list)))
+               (delete-node widget current-list))
+             
+             (ensure-cursor-position-is-correct (first items-to-move)
+                                                0)))
           ;; Part where we might join two list-items
           (t
-           (let ((current-list-item (select-outer-list-item (document widget)
+           (log:error "Joining with the previous list item")
+           (let ((current-list-item (select-outer-list-item document
                                                             paragraph-to-delete)))
              (when current-list-item
-               (let ((previous-list-item (find-previous-sibling (document widget)
+               (let ((previous-list-item (find-previous-sibling document
                                                                 current-list-item)))
+
                  (when previous-list-item
                    (join-list-items widget
                                     previous-list-item
@@ -701,7 +779,7 @@ Second Line.
                                                              :reference (get-next-reference-id widget))))
                             (insert-node widget
                                          new-list-item
-                                         :after list-item)
+                                         :relative-to list-item)
                             ;; When a new list item is inserted
                             ;; the cursor should be placed on the
                             ;; first paragraph.
@@ -802,9 +880,11 @@ Second Line.
              
              (defun insert-node (args)
                (let* ((version (@ args version))
-                      (after-node-id (@ args after-node-id))
+                      (relative-to-node-id (@ args relative-to-node-id))
+                      (position (or (@ args position)
+                                    "afterend"))
                       (after-node (chain document
-                                         (get-element-by-id after-node-id)))
+                                         (get-element-by-id relative-to-node-id)))
                       (editor (get-editor-content-node after-node))
                       (current-version (@ editor dataset version)))
                  
@@ -814,7 +894,7 @@ Second Line.
                      (chain console
                             (log "INSERTING " html-string))
                      (chain after-node
-                            (insert-adjacent-h-t-m-l "afterend" html-string))))))
+                            (insert-adjacent-h-t-m-l position html-string))))))
              
              (defun delete-node (args)
                (let* ((version (@ args version))
@@ -1083,7 +1163,9 @@ Second Line.
               (.content :outline none)
               (.content
                (p
-                :white-space pre-wrap))
+                :white-space pre-wrap)
+               (ul
+                :padding-left 1.2rem))
               (.bold :font-weight bold)
               (.markup :display none)
               ((:and p .active)
