@@ -7,7 +7,6 @@
   (:import-from #:reblocks-text-editor/html)
   (:import-from #:reblocks-text-editor/frontend/js)
   (:import-from #:reblocks-text-editor/frontend/css)
-  (:import-from #:reblocks-text-editor/document/refs)
   (:import-from #:reblocks-text-editor/document/editable)
   (:import-from #:reblocks-text-editor/document/ops
                 #:map-document)
@@ -33,11 +32,7 @@ Second Line.
          (doc (make-instance 'reblocks-text-editor/document/editable::editable-document
                              :children (list content))))
     
-    (multiple-value-bind (doc next-id)
-        (reblocks-text-editor/document/refs::add-reference-ids doc)
-      (setf (reblocks-text-editor/document/editable::next-id doc)
-            next-id)
-      (values doc))))
+    (reblocks-text-editor/document/ops::add-reference-ids doc)))
 
 
 (reblocks/widget:defwidget editor ()
@@ -132,6 +127,9 @@ Second Line.
                                "join-with-prev-paragraph")
                       (reblocks-text-editor/document/ops::join-with-prev-paragraph
                        document path new-html cursor-position))
+                     ((string= change-type
+                               "indent")
+                      (reblocks-text-editor/document/ops::indent document path cursor-position))
                      (t
                       (process-usual-update document path new-html cursor-position))))))
             

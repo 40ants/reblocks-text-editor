@@ -3,6 +3,10 @@
   (:import-from #:common-doc)
   (:import-from #:reblocks-text-editor/utils/markdown)
   (:import-from #:reblocks-text-editor/html)
+  (:import-from #:alexandria
+                #:lastcar)
+  (:import-from #:reblocks-text-editor/document/editable
+                #:get-next-reference-id)
   (:local-nicknames (#:dom #:reblocks-text-editor/dom/ops)))
 (in-package #:reblocks-text-editor/document/ops)
 
@@ -510,15 +514,21 @@
     (values)))
 
 
+(defun add-reference-ids (document &key (to-node document))
+  (flet ((set-reference-id (node depth)
+           (declare (ignore depth))
+           (setf (common-doc:reference node)
+                 (get-next-reference-id document))
+           (values)))
+    (common-doc.ops:traverse-document to-node
+                                      #'set-reference-id)
+    (values to-node)))
+
+
 (defun prepare-new-content (document text)
   (let ((paragraph (reblocks-text-editor/utils/markdown::from-markdown text)))
-    (multiple-value-bind (paragraph next-id)
-        (reblocks-text-editor/document/refs::add-reference-ids
-         paragraph
-         :next-id (reblocks-text-editor/document/editable::next-id document))
-      (setf (reblocks-text-editor/document/editable::next-id document)
-            next-id)
-      (values paragraph))))
+    (add-reference-ids document
+                       :to-node paragraph)))
 
 
 
@@ -602,3 +612,51 @@
        (log:error "Unable to find node for"
                   cursor-position
                   (reblocks-text-editor/html::to-html-string changed-node))))))
+
+
+(defun last-child-of (node)
+  (check-type node node-with-children)
+  (lastcar (common-doc:children node)))
+
+
+(defun first-child-of (node)
+  (check-type node node-with-children)
+  (first (common-doc:children node)))
+
+
+(defun indent (document path cursor-position)
+  "This functions tries to increase indentation the current node.
+
+   If node is a list-item, it will be transformed into a nested list."
+  (let ((current-node (find-changed-node document path)))
+    (log:error "Indenting" current-node)
+    
+    (let* ((current-list-item (select-outer-list-item document current-node))
+           (previous-list-item (when current-list-item
+                                 (find-previous-sibling document current-list-item))))
+      (when (and current-list-item
+                 ;; TODO: implement visual bell
+                 ;; to let user know that first item can't be indented
+                 (not (null previous-list-item)))
+        (let ((last-node (last-child-of previous-list-item)))
+          (delete-node document current-list-item)
+          (typecase last-node
+            ;; Insert node to the list inside a previous
+            ;; list item:
+            (common-doc:base-list
+             (insert-node document current-list-item
+                          :relative-to last-node
+                          :position :as-last-child))
+            ;; Otherwise, create a new list
+            ;; with this one item
+            (t
+             (let ((new-list (add-reference-ids document
+                                                :to-node (common-doc:make-unordered-list
+                                                          (list current-list-item)))))
+               (insert-node document new-list
+                            :relative-to last-node
+                            :position :after))))
+          ;; We need to restore a cursor position
+          ;; after nodes movement:
+          (ensure-cursor-position-is-correct current-list-item
+                                             cursor-position))))))
