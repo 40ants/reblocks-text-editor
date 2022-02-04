@@ -1,6 +1,7 @@
 (uiop:define-package #:reblocks-text-editor/document/ops
   (:use #:cl)
-  (:import-from #:common-doc)
+  (:import-from #:common-doc
+                #:children)
   (:import-from #:reblocks-text-editor/utils/markdown)
   (:import-from #:reblocks-text-editor/html)
   (:import-from #:alexandria
@@ -19,8 +20,8 @@
 (defun %map-node-with-children (cnode function &optional (depth 0) make-bindings)
   (let ((possibly-new-node (funcall function cnode depth)))
     (when (eql possibly-new-node cnode)
-      (setf (common-doc:children cnode)
-            (loop for child in (common-doc:children cnode)
+      (setf (children cnode)
+            (loop for child in (children cnode)
                   unless (reblocks-text-editor/html::markup-p child)
                     collect (map-document child function
                                           (1+ depth)
@@ -46,8 +47,8 @@
         (call-next-method))))
   
   (:method ((doc common-doc:document) function &optional (depth 0) make-bindings)
-    (setf (common-doc:children doc)
-          (loop for child in (common-doc:children doc)
+    (setf (children doc)
+          (loop for child in (children doc)
                 unless (reblocks-text-editor/html::markup-p child)
                   collect (map-document child function
                                         (1+ depth)
@@ -91,7 +92,7 @@
            (when (eql node node-to-replace)
              (unless (typep node 'node-with-children)
                (error "Unable to replace content for node ~A" node))
-             (setf (common-doc:children node)
+             (setf (children node)
                    new-children))
            node))
     (map-document document #'do-replace)))
@@ -136,9 +137,9 @@
                 ;;         (markup-length node)))
 
                 (cond
-                  ((common-doc:children node)
+                  ((children node)
                    (mapc #'recursive-find
-                         (common-doc:children node)))
+                         (children node)))
 
                   ;; The case, when cursor points to the empty
                   ;; node, like a new paragraph with no content:
@@ -202,7 +203,7 @@
            (declare (ignore depth))
            (when (typep current-node
                         'node-with-children)
-             (let* ((children (common-doc:children current-node))
+             (let* ((children (children current-node))
                     (pos (position node children)))
                (when pos
                  (return-from select-siblings-next-to
@@ -285,14 +286,14 @@
            (log:error "Extracting content of the first list item")
            
            (let ((current-list (select-outer-list document current-list-item))
-                 (items-to-move (common-doc:children current-list-item)))
+                 (items-to-move (children current-list-item)))
              (delete-node document current-list-item)
              (insert-node document items-to-move
                           :relative-to current-list
                           :position :before)
              ;; If list where we was is empty now, there is no reason
              ;; to keep it inside the document:
-             (when (zerop (length (common-doc:children current-list)))
+             (when (zerop (length (children current-list)))
                (delete-node document current-list))
              
              (ensure-cursor-position-is-correct (first items-to-move)
@@ -314,7 +315,7 @@
 (defun is-last-child-p (container node)
   (check-type container node-with-children)
   (check-type node common-doc:document-node)
-  (= (length (member node (common-doc:children container)))
+  (= (length (member node (children container)))
      1))
 
 
@@ -371,7 +372,7 @@
 
 
 (defun join-list-items (widget previous-list-item current-list-item)
-  (let ((items-to-move (common-doc:children current-list-item)))
+  (let ((items-to-move (children current-list-item)))
     (append-children widget previous-list-item items-to-move)
     (delete-node widget current-list-item)
     (ensure-cursor-position-is-correct (first items-to-move)
@@ -397,7 +398,7 @@
                  (common-doc:paragraph
                   (return-from find-previous-paragraph node))
                  (node-with-children
-                  (recurse (car (last (common-doc:children node)))))
+                  (recurse (car (last (children node)))))
                  (t
                   (return-from find-previous-paragraph nil)))))
       (recurse node))))
@@ -416,7 +417,7 @@
              (declare (ignore depth))
              (when (typep current-node 'node-with-children)
                (symbol-macrolet ((current-children
-                                   (common-doc:children current-node)))
+                                   (children current-node)))
                  (let ((found-pos (position relative-to
                                             current-children)))
                    (when found-pos
@@ -446,15 +447,15 @@
          (unless (typep relative-to 'node-with-children)
            (error "I can insert children only into container nodes. ~A node has a wrong type."
                   relative-to))
-         (setf (common-doc:children relative-to)
+         (setf (children relative-to)
                (append nodes-to-insert
-                       (common-doc:children relative-to))))
+                       (children relative-to))))
         (:as-last-child
          (unless (typep relative-to 'node-with-children)
            (error "I can insert children only into container nodes. ~A node has a wrong type."
                   relative-to))
-         (setf (common-doc:children relative-to)
-               (append (common-doc:children relative-to)
+         (setf (children relative-to)
+               (append (children relative-to)
                        nodes-to-insert))))))
 
   (dom::insert-node document
@@ -468,8 +469,8 @@
   (flet ((find-and-delete (current-node depth)
            (declare (ignore depth))
            (when (typep current-node 'node-with-children)
-             (setf (common-doc:children current-node)
-                   (remove node (common-doc:children current-node))))
+             (setf (children current-node)
+                   (remove node (children current-node))))
            ;; Returning the same node to continue searching
            (values current-node)))
     (map-document document #'find-and-delete))
@@ -483,12 +484,12 @@
            (declare (ignore depth))
            (when (typep current-node 'node-with-children)
              (let ((found-pos (position node
-                                        (common-doc:children current-node))))
+                                        (children current-node))))
                (when (and found-pos
                           (not (zerop found-pos)))
                  (return-from find-previous-sibling
                    (nth (1- found-pos)
-                        (common-doc:children current-node))))))
+                        (children current-node))))))
            ;; Returning the same node to continue searching
            (values current-node)))
     (map-document document #'find-node)
@@ -500,14 +501,14 @@
            (declare (ignore depth))
            (when (typep current-node 'node-with-children)
              (let ((found-pos (position node
-                                        (common-doc:children current-node)))
-                   (last-item-pos (1- (length (common-doc:children current-node)))))
+                                        (children current-node)))
+                   (last-item-pos (1- (length (children current-node)))))
                (when (and found-pos
                           (not (= found-pos
                                   last-item-pos)))
                  (return-from find-next-sibling
                    (nth (1+ found-pos)
-                        (common-doc:children current-node))))))
+                        (children current-node))))))
            ;; Returning the same node to continue searching
            (values current-node)))
     (map-document document #'find-node)
@@ -549,7 +550,7 @@
       (common-doc:paragraph
        (replace-node-content document
                              paragraph
-                             (common-doc:children new-content))
+                             (children new-content))
 
        (dom::update-node document paragraph)
        (values paragraph cursor-position))
@@ -564,7 +565,7 @@
            ;; it into the document
            ((eql (type-of previous-node)
                  (type-of list-node))
-            (let ((new-children (common-doc:children list-node)))
+            (let ((new-children (children list-node)))
               (insert-node document new-children
                            :relative-to previous-node
                            :position :as-last-child)
@@ -575,7 +576,7 @@
            ;; before another one:
            ((eql (type-of next-node)
                  (type-of list-node))
-            (let ((new-children (common-doc:children list-node)))
+            (let ((new-children (children list-node)))
               (insert-node document new-children
                            :relative-to next-node
                            :position :as-first-child)
@@ -616,12 +617,12 @@
 
 (defun last-child-of (node)
   (check-type node node-with-children)
-  (lastcar (common-doc:children node)))
+  (lastcar (children node)))
 
 
 (defun first-child-of (node)
   (check-type node node-with-children)
-  (first (common-doc:children node)))
+  (first (children node)))
 
 
 (defun indent (document path cursor-position)
@@ -687,16 +688,30 @@
                  (null next-sibling))
         (let* ((parent-list (select-outer-list document current-list-item))
                (parent-list-outer-item (select-outer-list-item document parent-list)))
-          (when parent-list-outer-item
-            (delete-node document current-list-item)
-            ;; If after list item deletion list becomes
-            ;; empty, we don't need it to
-            (unless (common-doc:children parent-list)
-              (delete-node document parent-list))
+          (cond
+            (parent-list-outer-item
+             (delete-node document current-list-item)
+             ;; If after list item deletion list becomes
+             ;; empty, we don't need it to
+             (unless (children parent-list)
+               (delete-node document parent-list))
 
-            (insert-node document current-list-item
-                         :relative-to parent-list-outer-item
-                         :position :after))
+             (insert-node document current-list-item
+                          :relative-to parent-list-outer-item
+                          :position :after))
+            ;; If there is no outer list around the current,
+            ;; then we should transform our current list item
+            ;; into the usual content and insert it after
+            ;; our current list
+            (t
+             (delete-node document current-list-item)
+             (insert-node document (children current-list-item)
+                          :relative-to parent-list
+                          :position :after)
+             ;; If after list item deletion list becomes
+             ;; empty, we don't need it to
+             (unless (children parent-list)
+               (delete-node document parent-list))))
           
           (ensure-cursor-position-is-correct current-node
                                              cursor-position))))))
