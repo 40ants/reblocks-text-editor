@@ -130,6 +130,9 @@ Second Line.
                      ((string= change-type
                                "indent")
                       (reblocks-text-editor/document/ops::indent document path cursor-position))
+                     ((string= change-type
+                               "dedent")
+                      (reblocks-text-editor/document/ops::dedent document path cursor-position))
                      (t
                       (process-usual-update document path new-html cursor-position))))))
             

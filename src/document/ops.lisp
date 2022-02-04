@@ -658,5 +658,45 @@
                             :position :after))))
           ;; We need to restore a cursor position
           ;; after nodes movement:
-          (ensure-cursor-position-is-correct current-list-item
+          (ensure-cursor-position-is-correct current-node
+                                             cursor-position))))))
+
+
+(defun dedent (document path cursor-position)
+  "This functions tries to decrease indentation the current node.
+
+   If node is a list-item, it will be transformed into a nested list.
+
+   Only the last list item can be dedented. In this case
+   it appended as a next node after the current list.
+
+   In case if the current list also in the list item,
+   then the current list item will be added after it."
+  (let ((current-node (find-changed-node document path)))
+    (log:error "Indenting" current-node)
+    
+    (let* ((current-list-item (select-outer-list-item document current-node))
+           (next-sibling (find-next-sibling document current-list-item)))
+      (when (and current-list-item
+                 ;; TODO: implement visual bell
+                 ;; to let user know that first item can't be indented
+                 ;; 
+                 ;; We only can dedent the last list item,
+                 ;; because otherwise it is unclrear where to
+                 ;; put the rest siblings:
+                 (null next-sibling))
+        (let* ((parent-list (select-outer-list document current-list-item))
+               (parent-list-outer-item (select-outer-list-item document parent-list)))
+          (when parent-list-outer-item
+            (delete-node document current-list-item)
+            ;; If after list item deletion list becomes
+            ;; empty, we don't need it to
+            (unless (common-doc:children parent-list)
+              (delete-node document parent-list))
+
+            (insert-node document current-list-item
+                         :relative-to parent-list-outer-item
+                         :position :after))
+          
+          (ensure-cursor-position-is-correct current-node
                                              cursor-position))))))
