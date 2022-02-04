@@ -2,7 +2,8 @@
   (:use #:cl)
   (:import-from #:common-doc)
   (:import-from #:reblocks-text-editor/utils/markdown)
-  (:import-from #:reblocks-text-editor/html))
+  (:import-from #:reblocks-text-editor/html)
+  (:local-nicknames (#:dom #:reblocks-text-editor/dom/ops)))
 (in-package #:reblocks-text-editor/document/ops)
 
 
@@ -452,16 +453,10 @@
                (append (common-doc:children relative-to)
                        nodes-to-insert))))))
 
-  (reblocks/commands:add-command 'insert-node
-                                 :version (reblocks-text-editor/document/editable::content-version document)
-                                 :relative-to-node-id (common-doc:reference relative-to)
-                                 :position (ecase position
-                                             (:after "afterend")
-                                             (:before "beforebegin")
-                                             (:as-last-child "beforeend")
-                                             (:as-first-child "afterbegin"))
-                                 :html (reblocks-text-editor/html::to-html-string node))
-
+  (dom::insert-node document
+                    node
+                    :relative-to relative-to
+                    :position position)
   (values))
 
 
@@ -475,9 +470,7 @@
            (values current-node)))
     (map-document document #'find-and-delete))
 
-  (reblocks/commands:add-command 'delete-node
-                                 :version (reblocks-text-editor/document/editable::content-version document)
-                                 :node-id (common-doc:reference node))
+  (dom::delete-node document node)
   (values))
 
 
@@ -548,11 +541,7 @@
                              paragraph
                              (common-doc:children new-content))
 
-       (reblocks/commands:add-command 'update-text
-                                      :version (reblocks-text-editor/document/editable::content-version document)
-                                      :replace-node-id (common-doc:reference paragraph)
-                                      :with-html (reblocks-text-editor/html::to-html-string
-                                                  paragraph))
+       (dom::update-node document paragraph)
        (values paragraph cursor-position))
       ;; A new list item was created by manual enter of the "* "
       ;; at the beginning of the paragraph:
@@ -589,14 +578,10 @@
                           paragraph
                           list-node)
 
-            (reblocks/commands:add-command 'insert-node
-                                           :version (reblocks-text-editor/document/editable::content-version document)
-                                           :relative-to-node-id (common-doc:reference paragraph)
-                                           :html (reblocks-text-editor/html::to-html-string
-                                                  list-node))
-            (reblocks/commands:add-command 'delete-node
-                                           :version (reblocks-text-editor/document/editable::content-version document)
-                                           :node-id (common-doc:reference paragraph))
+            (dom::insert-node document
+                              list-node
+                              :relative-to paragraph)
+            (dom::delete-node document paragraph)
             (values list-node
                     (decf cursor-position 2)))))))))
 
@@ -612,10 +597,7 @@
                              cursor-position)
     (cond
       (node
-       (reblocks/commands:add-command 'set-cursor
-                                      :node-id (common-doc:reference node)
-                                      ;; We should figure out how to pass this from the frontend first
-                                      :position new-cursor-position))
+       (dom::move-cursor node new-cursor-position))
       (t
        (log:error "Unable to find node for"
                   cursor-position

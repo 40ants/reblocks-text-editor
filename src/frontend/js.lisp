@@ -28,8 +28,8 @@
             set-cursor)
       (setf (chain window
                    command-handlers
-                   update-text)
-            update-text)
+                   replace-node)
+            replace-node)
       (setf (chain window
                    command-handlers
                    insert-node)
@@ -47,20 +47,19 @@
              body
              first-child)))
 
-      (defun update-text (args)
+      (defun replace-node (args)
         (let* ((version (@ args version))
-               (node-id (@ args replace-node-id))
+               (node-id (@ args node-id))
                (node (chain document
                             (get-element-by-id node-id)))
                (editor (get-editor-content-node node))
                (current-version (@ editor dataset version)))
 
-          (chain console
-                 (log "Updating text" editor current-version))
-          
           (unless (< version current-version)
             (let* ((html-string (@ args with-html))
                    (html (from-html html-string)))
+              (chain console
+                     (log "Replacing" node "with" html))
               (chain node
                      (replace-with html))))))
       
@@ -289,16 +288,31 @@
         (chain console
                (log "on-keydown event" event))
         (cond
-          ;; Enter
-          ((and (= (@ event key-code)
-                   13)
+          ((and (= (@ event key)
+                   "Enter")
                 (@ event alt-key))
            ;; When inside a list item,
            ;; this split will add a new item.
            ;; Otherwise, it works as a usual Enter,
            ;; adding a new paragraph:
            (change-text event "split")
+           (chain event
+                  (prevent-default)))
+          
+          ;; Arrow movements
+          ((and (= (@ event key)
+                   "ArrowRight")
+                (@ event alt-key))
            
+           (change-text event "indent")
+           (chain event
+                  (prevent-default)))
+          
+          ((and (= (@ event key)
+                   "ArrowLeft")
+                (@ event alt-key))
+           
+           (change-text event "dedent")
            (chain event
                   (prevent-default)))
           (t
