@@ -5,4 +5,4 @@
 (defsystem "reblocks-text-editor"
   :class :package-inferred-system
   :pathname "src"
-  :depends-on ("reblocks-text-editor/widgets/editor"))
+  :depends-on ("reblocks-text-editor/editor"))

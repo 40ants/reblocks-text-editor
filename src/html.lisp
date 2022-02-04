@@ -34,6 +34,10 @@
     ("list" . "ul")))
 
 
+(defmethod to-html ((node common-doc:document))
+  (to-html (common-doc:children node)))
+
+
 (defmethod to-html ((node common-doc:content-node))
   (let* ((node-type (class-of node))
          (tag (or (loop for key being the hash-key of common-doc::*registry*
