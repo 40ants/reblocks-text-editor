@@ -18,7 +18,8 @@
   (:import-from #:bordeaux-threads
                 #:make-lock)
   (:import-from #:alexandria
-                #:curry))
+                #:curry)
+  (:local-nicknames (#:ops #:reblocks-text-editor/document/ops)))
 (in-package #:reblocks-text-editor/editor)
 
 
@@ -64,6 +65,22 @@ Second Line.
           current-node cursor-position)))
       (t
        (log:warn "Cant find paragraph at" path)))))
+
+
+(defun move-cursor-up (document path cursor-position)
+  (let* ((current-paragraph (ops::find-changed-node document path))
+         (prev-paragraph (ops::find-previous-paragraph document current-paragraph)))
+    (check-type current-paragraph common-doc:paragraph)
+    (when prev-paragraph
+      (ops::ensure-cursor-position-is-correct prev-paragraph cursor-position))))
+
+
+(defun move-cursor-down (document path cursor-position)
+  (let* ((current-paragraph (ops::find-changed-node document path))
+         (next-paragraph (ops::find-next-paragraph document current-paragraph)))
+    (check-type current-paragraph common-doc:paragraph)
+    (when next-paragraph
+      (ops::ensure-cursor-position-is-correct next-paragraph cursor-position))))
 
 
 (defmethod reblocks/widget:render ((widget editor))
@@ -133,6 +150,12 @@ Second Line.
                      ((string= change-type
                                "dedent")
                       (reblocks-text-editor/document/ops::dedent document path cursor-position))
+                     ((string= change-type
+                               "move-cursor-up")
+                      (move-cursor-up document path cursor-position))
+                     ((string= change-type
+                               "move-cursor-down")
+                      (move-cursor-down document path cursor-position))
                      (t
                       (process-usual-update document path new-html cursor-position))))))
             

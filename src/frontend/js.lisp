@@ -315,6 +315,19 @@
            (change-text event "dedent")
            (chain event
                   (prevent-default)))
+          
+          ;; Up&Down without modifiers
+          ((and (= (@ event key)
+                   "ArrowUp"))
+           (change-text event "move-cursor-up")
+           (chain event
+                  (prevent-default)))
+          
+          ((and (= (@ event key)
+                   "ArrowDown"))
+           (change-text event "move-cursor-down")
+           (chain event
+                  (prevent-default)))
           (t
            (update-active-paragraph))))
       

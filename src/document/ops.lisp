@@ -383,7 +383,7 @@
 
    For example, when called on such document:
 
-   * Level 1
+   * Level1
      * Level2 paragraph 1
 
        Level2 paragraph 2
@@ -391,17 +391,46 @@
    Level0 paragraph
 
    When NODE is the \"Level0 paragraph\" function should return:
-   \"Level2 paragraph 2\"."
-  (let ((node (find-previous-sibling document node)))
-    (labels ((recurse (node)
-               (etypecase node
-                 (common-doc:paragraph
-                  (return-from find-previous-paragraph node))
-                 (node-with-children
-                  (recurse (car (last (children node)))))
-                 (t
-                  (return-from find-previous-paragraph nil)))))
-      (recurse node))))
+   \"Level2 paragraph 2\".
+
+   When NODE is the \"Level2 paragraph 2\" it should return \"Level2 paragraph 1\".
+
+   When NODE is the \"Level2 paragraph 1\" it should return \"Level1\".
+"
+  (let ((previous-paragraph nil))
+    (flet ((search-node (current-node depth)
+             (declare (ignore depth))
+             (cond
+               ((eql current-node node)
+                (return-from find-previous-paragraph
+                  previous-paragraph))
+               ;; remember
+               ((typep current-node 'common-doc:paragraph)
+                (setf previous-paragraph
+                      current-node)))
+             (values current-node)))
+      (map-document document #'search-node))
+    (values)))
+
+
+(defun find-next-paragraph (document node)
+  "This function does opposite to FIND-PREV-PARAGRAPH."
+  (let ((node-found nil))
+    (flet ((search-node (current-node depth)
+             (declare (ignore depth))
+             (cond
+               ;; Remember we found the given NODE:
+               ((eql current-node node)
+                (setf node-found t))
+               ;; This block will work only after we found
+               ;; given NODE:
+               ((and node-found
+                     (typep current-node 'common-doc:paragraph))
+                (return-from find-next-paragraph
+                  current-node)))
+             (values current-node)))
+      (map-document document #'search-node))
+    (values)))
 
 
 (defmethod insert-node ((document common-doc:document-node) node &key (relative-to (alexandria:required-argument))
