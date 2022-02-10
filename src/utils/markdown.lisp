@@ -1,11 +1,18 @@
 (uiop:define-package #:reblocks-text-editor/utils/markdown
   (:use #:cl)
+  (:import-from #:3bmd)
   (:import-from #:commondoc-markdown/emitter)
   (:import-from #:common-doc.format)
   (:import-from #:common-doc)
   (:import-from #:reblocks-text-editor/utils/text)
   (:import-from #:reblocks-text-editor/html))
 (in-package #:reblocks-text-editor/utils/markdown)
+
+
+;; Here we need to redefine this rule, to prevent
+;; 3bmd to parse [such] contructs as a link :(
+(esrap:defrule 3bmd-grammar::reference-link-single "PleAsE DoNT"
+  (:constant :ignore))
 
 
 (defun to-markdown (node)

@@ -88,27 +88,75 @@
 (defmethod to-html ((node common-doc:bold))
   (reblocks/html:with-html
     (:b :id (common-doc:reference node)
-        ;; (:span :class "markup"
-        ;;        "**")
+        (mapc #'to-html (common-doc:children node)))))
 
-        (mapc #'to-html (common-doc:children node))
-           
-        ;; (:span :class "markup"
-        ;;        "**")
-        )))
 
 (defmethod to-html ((node common-doc:italic))
   (reblocks/html:with-html
     (:i :id (common-doc:reference node)
         :class (html-class node)
-        ;; (:span :class "markup"
-        ;;        "*")
+        (mapc #'to-html (common-doc:children node)))))
 
-        (mapc #'to-html (common-doc:children node))
-           
-        ;; (:span :class "markup"
-        ;;        "*")
-        )))
+
+(defmethod to-html ((node commondoc-markdown:markdown-link))
+  (reblocks/html:with-html
+    (:span :id (common-doc:reference node)
+           :class (html-class node)
+           (mapc #'to-html (common-doc:children node)))))
+
+
+(defmethod common-doc:children :around ((node commondoc-markdown:markdown-link))
+  (if *render-markup*
+      (let* ((definition (commondoc-markdown:markdown-link-definition node))
+             ;; TODO: here we need somehow to create a real link:
+             (uri (quri:make-uri :scheme "internal"
+                                 :path definition)))
+        (list (make-markup2 node "[" "left-bracket")
+              (make-visible-weblink (call-next-method)
+                                    uri)
+              (make-markup2 node "]" "right-bracket")
+              (make-markup2 node "[" "right-bracket")
+              (make-markup2 node definition "definition")
+              (make-markup2 node "]" "right-bracket")))
+      (call-next-method)))
+
+
+(defclass visible-weblink (common-doc:web-link)
+  ())
+
+
+(defun make-visible-weblink (children uri)
+  (make-instance 'visible-weblink
+                 :children children
+                 :uri uri))
+
+(defmethod to-html ((node visible-weblink))
+  (reblocks/html:with-html
+    (:a :id (common-doc:reference node)
+        :class (html-class node)
+        :href (quri:render-uri (common-doc:uri node))
+        (mapc #'to-html (common-doc:children node)))))
+
+
+(defmethod to-html ((node common-doc:web-link))
+  (reblocks/html:with-html
+    (:span :id (common-doc:reference node)
+           :class (html-class node)
+           (mapc #'to-html (common-doc:children node)))))
+
+
+(defmethod common-doc:children :around ((node common-doc:web-link))
+  (if (and *render-markup*
+           (not (typep node 'visible-weblink)))
+      (let ((uri (common-doc:uri node)))
+        (list (make-markup2 node "[" "left-bracket")
+              (make-visible-weblink (call-next-method)
+                                    uri)
+              (make-markup2 node "]" "right-braket")
+              (make-markup2 node "(" "left-paren")
+              (make-markup2 node (quri:render-uri uri) "uri")
+              (make-markup2 node ")" "right-paren")))
+      (call-next-method)))
 
 
 (defmethod to-html ((node string))
@@ -133,10 +181,22 @@
                    :text text
                    :metadata (alist-hash-table
                               (list (cons "class"
-                                          "markup")))
+                                          "markup"))
+                              :test 'equal)
                    :reference (format nil "~A-~A-markup"
                                       (common-doc:reference node)
                                       side))))
+
+(defun make-markup2 (node text markup-type)
+  (make-instance 'markup
+                 :text text
+                 :metadata (alist-hash-table
+                            (list (cons "class"
+                                        "markup"))
+                            :test 'equal)
+                 :reference (format nil "~A-~A"
+                                    (common-doc:reference node)
+                                    markup-type)))
 
 (defvar *render-markup* t)
 
