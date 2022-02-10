@@ -169,6 +169,25 @@
             (initiate-action (@ event target dataset action-code)
                              (create :args args)))))
       
+      (defun paste-text (event text)
+        (let* ((content-node (get-editor-content-node
+                              (@ event target)))
+               (current-version
+                 (incf (@ content-node dataset version)))
+               (path (trim-path-to-nearest-paragraph
+                        (calculate-path)))
+                 (cursor-position (caret-position))
+                 (args (create
+                        :change-type "paste"
+                        :pasted-text text
+                        :path path
+                        :cursor-position cursor-position
+                        :version current-version))
+               (action-code (@ content-node dataset action-code)))
+
+          (initiate-action action-code
+                           (create :args args))))
+      
       (defun go-up-to (tag-name starting-node)
         (loop for node = starting-node
                 then (@ node parent-node)
@@ -330,6 +349,16 @@
                   (prevent-default)))
           (t
            (update-active-paragraph))))
+
+      
+      (defun on-paste (event)
+        (chain console
+               (log "on-paste event" event))
+        (let* ((pasted-text (chain (@ event clipboard-data)
+                                   (get-data "text"))))
+          (paste-text event pasted-text)
+          (chain event
+                 (prevent-default))))
       
       (defun setup ()
         (chain this
@@ -343,7 +372,10 @@
                                    on-editor-input))
         (chain this
                (add-event-listener "keydown"
-                                   on-keydown)))
+                                   on-keydown))
+        (chain this
+               (add-event-listener "paste"
+                                   on-paste)))
 
       (defun on-editor-input (event)
         ;; (chain console

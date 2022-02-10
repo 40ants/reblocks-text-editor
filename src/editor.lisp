@@ -10,7 +10,8 @@
   (:import-from #:reblocks-text-editor/document/editable)
   (:import-from #:reblocks-text-editor/document/ops
                 #:map-document)
-  (:import-from #:reblocks-text-editor/utils/markdown)
+  (:import-from #:reblocks-text-editor/utils/markdown
+                #:to-markdown)
   (:import-from #:parenscript
                 #:create
                 #:chain
@@ -18,7 +19,10 @@
   (:import-from #:bordeaux-threads
                 #:make-lock)
   (:import-from #:alexandria
+                #:lastcar
                 #:curry)
+  (:import-from #:reblocks-text-editor/utils/http
+                #:retrieve-url-title)
   (:local-nicknames (#:ops #:reblocks-text-editor/document/ops)))
 (in-package #:reblocks-text-editor/editor)
 
@@ -83,6 +87,39 @@ Second Line.
       (ops::ensure-cursor-position-is-correct next-paragraph cursor-position))))
 
 
+(defun paste-text (document path cursor-position pasted-text)
+  (log:info "User wants to insert ~A" pasted-text)
+
+  (let* ((paragraph (reblocks-text-editor/document/ops::find-changed-node document path)))
+    (cond
+      ((or (str:starts-with-p "http://" pasted-text)
+           (str:starts-with-p "https://" pasted-text))
+       (multiple-value-bind (node new-cursor-position)
+           (ops::find-node-at-position paragraph
+                                       cursor-position)
+         (declare (ignore new-cursor-position))
+         (cond
+           (node
+            (let* ((title (or (retrieve-url-title pasted-text)
+                              pasted-text))
+                   (new-node (common-doc:make-web-link
+                              pasted-text
+                              (list (common-doc:make-text title)))))
+              (ops::add-reference-ids document
+                                      :to-node new-node)
+              (ops::insert-node document
+                                new-node
+                                :relative-to node)
+
+              (let* ((last-child (lastcar (common-doc:children new-node)))
+                     (last-child-len (length (to-markdown last-child))))
+                (ops::ensure-cursor-position-is-correct last-child last-child-len))))
+           (t
+            (log:error "Unable to find node for"
+                       cursor-position
+                       (reblocks-text-editor/html::to-html-string paragraph)))))))))
+
+
 (defmethod reblocks/widget:render ((widget editor))
   (let ((document (document widget)))
     (setf *document*
@@ -91,7 +128,7 @@ Second Line.
           widget)
 
 
-    (labels ((process-update (&key change-type version new-html path cursor-position &allow-other-keys)
+    (labels ((process-update (&key change-type version new-html path cursor-position pasted-text &allow-other-keys)
                (bordeaux-threads:with-lock-held ((reblocks-text-editor/document/editable::document-lock document))
                  (when (> version (reblocks-text-editor/document/editable::content-version document))
                    (log:error "Processing" new-html path cursor-position version change-type)
@@ -156,6 +193,10 @@ Second Line.
                      ((string= change-type
                                "move-cursor-down")
                       (move-cursor-down document path cursor-position))
+                     ((string= change-type
+                               "paste")
+                      (paste-text document path cursor-position
+                                  pasted-text))
                      (t
                       (process-usual-update document path new-html cursor-position))))))
             
