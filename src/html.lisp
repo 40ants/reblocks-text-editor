@@ -111,13 +111,13 @@
              ;; TODO: here we need somehow to create a real link:
              (uri (quri:make-uri :scheme "internal"
                                  :path definition)))
-        (list (make-markup2 node "[" "left-bracket")
+        (list (make-markup2 node "[" "lb-title")
               (make-visible-weblink (call-next-method)
                                     uri)
-              (make-markup2 node "]" "right-bracket")
-              (make-markup2 node "[" "right-bracket")
+              (make-markup2 node "]" "rb-title")
+              (make-markup2 node "[" "lb-def")
               (make-markup2 node definition "definition")
-              (make-markup2 node "]" "right-bracket")))
+              (make-markup2 node "]" "rb-def")))
       (call-next-method)))
 
 
