@@ -12,6 +12,9 @@
 (in-package #:reblocks-text-editor/html)
 
 
+(defvar *render-markup* nil)
+
+
 (defgeneric to-html (node)
   (:documentation "Renders common-doc node to HTML using reblocks/html:with-html"))
 
@@ -20,8 +23,9 @@
 
 
 (defun to-html-string (node)
-  (with-output-to-string (reblocks/html:*stream*)
-    (to-html node)))
+  (let ((*render-markup* t))
+    (with-output-to-string (reblocks/html:*stream*)
+      (to-html node))))
 
 (defmethod html-class ((node common-doc:document-node))
   (awhen (common-doc:metadata node)
@@ -197,9 +201,6 @@
                  :reference (format nil "~A-~A"
                                     (common-doc:reference node)
                                     markup-type)))
-
-(defvar *render-markup* t)
-
 
 (defun markup-p (node)
   (typep node 'markup))

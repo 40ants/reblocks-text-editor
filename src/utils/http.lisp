@@ -1,6 +1,7 @@
 (uiop:define-package #:reblocks-text-editor/utils/http
   (:use #:cl)
   (:import-from #:dexador)
+  (:import-from #:clss)
   (:import-from #:serapeum
                 #:length>=))
 (in-package #:reblocks-text-editor/utils/http)

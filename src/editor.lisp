@@ -23,7 +23,9 @@
                 #:curry)
   (:import-from #:reblocks-text-editor/utils/http
                 #:retrieve-url-title)
-  (:local-nicknames (#:ops #:reblocks-text-editor/document/ops)))
+  (:local-nicknames (#:ops #:reblocks-text-editor/document/ops))
+  (:export
+   #:on-document-update))
 (in-package #:reblocks-text-editor/editor)
 
 
@@ -45,6 +47,11 @@ Second Line.
              :initform (make-initial-document)
              :reader document)))
 
+
+(reblocks/widget:defwidget editor-demo ()
+  ((editor :type editor
+           :initform (make-instance 'editor)
+           :reader editor-demo)))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; 
@@ -118,6 +125,12 @@ Second Line.
             (log:error "Unable to find node for"
                        cursor-position
                        (reblocks-text-editor/html::to-html-string paragraph)))))))))
+
+
+(defgeneric on-document-update (widget)
+  (:documentation "Called after the each document update.")
+  (:method ((widget editor))
+    (values)))
 
 
 (defmethod reblocks/widget:render ((widget editor))
@@ -198,33 +211,40 @@ Second Line.
                       (paste-text document path cursor-position
                                   pasted-text))
                      (t
-                      (process-usual-update document path new-html cursor-position))))))
-            
-             (reset-text (&rest args)
-               (declare (ignore args))
-               (bordeaux-threads:with-lock-held ((reblocks-text-editor/document/editable::document-lock document))
-                 (setf (slot-value widget 'document)
-                       (make-initial-document)
-                       (reblocks-text-editor/document/editable::content-version document)
-                       0)
-                 (reblocks/widget:update widget))))
+                      (process-usual-update document path new-html cursor-position))))
+
+                 (on-document-update widget))))
      
-      (let ((action-code (reblocks/actions:make-action #'process-update)))
+      (let ((action-code (reblocks/actions:make-action #'process-update))
+            ;; We need this flag to make sure our document will have
+            ;; a visible markup on active paragraph.
+            (reblocks-text-editor/html::*render-markup* t))
         (reblocks/html:with-html
-          (:h1 "Experimental HTML editor")
-          (:h2 "Using Common Lisp + Reblocks")
           (:div :class "content"
                 :data-action-code action-code
                 :data-version (reblocks-text-editor/document/editable::content-version document)
                 :contenteditable ""
                 :onload "setup()"
-                (reblocks-text-editor/html::to-html document))
+                (reblocks-text-editor/html::to-html document)))))))
 
-          (:p :id "debug"
-              "Path will be shown here.")
 
-          (:p (:button :onclick (reblocks/actions:make-js-action #'reset-text)
-                       "Reset Text")))))))
+(defmethod reblocks/widget:render ((widget editor-demo))
+  (labels ((reset-text (&rest args)
+             (declare (ignore args))
+             (setf (slot-value (editor-demo widget) 'document)
+                   (make-initial-document))
+             (reblocks/widget:update (editor-demo widget))))
+    
+    (reblocks/html:with-html
+      (:h1 "Experimental HTML editor")
+      (:h2 "Using Common Lisp + Reblocks")
+      (reblocks/widget:render (editor-demo widget))
+
+      (:p :id "debug"
+          "Path will be shown here.")
+
+      (:p (:button :onclick (reblocks/actions:make-js-action #'reset-text)
+                   "Reset Text")))))
 
 
 (defmethod reblocks/dependencies:get-dependencies ((widget editor))
