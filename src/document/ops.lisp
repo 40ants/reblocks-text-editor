@@ -126,43 +126,26 @@
                       (decf cursor-position
                             content-length))))
                (node-with-children
-                ;; (setf last-visited-node-content-length
-                ;;       (1+
-                ;;        (* (markup-length node)
-                ;;           2)))
-                
-                ;; (unless (zerop (markup-length node))
-                ;;   (log:info "Skipping" (markup-length node) "for" node)
-                ;;   (decf cursor-position
-                ;;         (markup-length node)))
+                ;; We need this render-markup flag to
+                ;; place cursor propertly after any
+                ;; markup elements:
+                (let ((reblocks-text-editor/html::*render-markup* t))
+                  (cond
+                    ((children node)
+                     (mapc #'recursive-find
+                           (children node)))
 
-                (cond
-                  ((children node)
-                   (mapc #'recursive-find
-                         (children node)))
-
-                  ;; The case, when cursor points to the empty
-                  ;; node, like a new paragraph with no content:
-                  ((zerop cursor-position)
-                   (return-from find-node-at-position
-                     (values node
-                             cursor-position))))
-                
-                ;; (unless (zerop (markup-length node))
-                ;;   (log:info "Skipping" (markup-length node) "for" node)
-                ;;   (decf cursor-position
-                ;;         (markup-length node)))
-                )))
-           ;; (markup-length (node)
-           ;;   (typecase node
-           ;;     (common-doc:bold 2)
-           ;;     (common-doc:italic 1)
-           ;;     (t 0)))
-           )
+                    ;; The case, when cursor points to the empty
+                    ;; node, like a new paragraph with no content:
+                    ((zerop cursor-position)
+                     (return-from find-node-at-position
+                       (values node
+                               cursor-position)))))))))
     
     (recursive-find node)
     (values last-visited-node
             last-visited-node-content-length)))
+
 
 (defun select-outer-node-of-type (root-node node searched-type)
   "Searched a nearest outer list item."
