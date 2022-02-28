@@ -14,9 +14,9 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
-(defun make-js-code ()
-  (reblocks-parenscript:make-dependency
-    (progn
+(defun make-js-code (shortcut)
+  (reblocks-parenscript:make-dependency*
+   `(progn
       (chain (j-query document)
              (ready (lambda ()
                       (chain (j-query ".editor")
@@ -146,7 +146,7 @@
 
           (let* ((path (trim-path-to-nearest-paragraph
                         (calculate-path)))
-                 (target (@ event target inner-h-t-m-l))
+                 ;; (target (@ event target inner-h-t-m-l))
                  (edited-node-id (@ path
                                     (1- (@ path length))))
                  (edited-node
@@ -169,20 +169,37 @@
             (initiate-action (@ event target dataset action-code)
                              (create :args args)))))
       
+      (defun process-shortcut (event)
+        (let ((current-version
+                (incf (@ event target dataset version))))
+
+          (let* ((path (trim-path-to-nearest-paragraph
+                        (calculate-path)))
+                 ;; (target (@ event target inner-h-t-m-l))
+                 (cursor-position (caret-position))
+                 (args (create
+                        :key-code (@ event key-code)
+                        :path path
+                        :cursor-position cursor-position
+                        :version current-version)))
+
+            (initiate-action (@ event target dataset shortcut-code)
+                             (create :args args)))))
+      
       (defun paste-text (event text)
         (let* ((content-node (get-editor-content-node
                               (@ event target)))
                (current-version
                  (incf (@ content-node dataset version)))
                (path (trim-path-to-nearest-paragraph
-                        (calculate-path)))
-                 (cursor-position (caret-position))
-                 (args (create
-                        :change-type "paste"
-                        :pasted-text text
-                        :path path
-                        :cursor-position cursor-position
-                        :version current-version))
+                      (calculate-path)))
+               (cursor-position (caret-position))
+               (args (create
+                      :change-type "paste"
+                      :pasted-text text
+                      :path path
+                      :cursor-position cursor-position
+                      :version current-version))
                (action-code (@ content-node dataset action-code)))
 
           (initiate-action action-code
@@ -199,17 +216,20 @@
       (defun get-editor-node (starting-node)
         (loop for node = starting-node
                 then (@ node parent-node)
-              when (chain node
-                          class-list
-                          (contains "editor"))
+              when (and (@ node class-list)
+                        (chain node
+                               class-list
+                               (contains "editor")))
                 do (return node)))
 
       (defun get-editor-content-node (starting-node)
         (loop for node = starting-node
                 then (@ node parent-node)
-              when (chain node
-                          class-list
-                          (contains "content"))
+              while node
+              when (and (@ node class-list)
+                        (chain node
+                               class-list
+                               (contains "content")))
                 do (return node)))
 
 
@@ -223,8 +243,9 @@
                (paragraph (go-up-to "P" node)))
           ;; If there is no any range, then we can't
           ;; determine a cursor position:
-          (when (> (@ selection range-count)
-                   0)
+          (when (and paragraph
+                     (> (@ selection range-count)
+                        0))
             (let* ((range-1 (chain selection
                                    (get-range-at 0)))
                    (range-2 (chain range-1
@@ -288,18 +309,20 @@
           (unless (eql +prev-current-node+
                        node)
             (let* ((current-paragraph (go-up-to "P" node))
-                   (editor (get-editor-content-node current-paragraph))
-                   (all-paragraphs (chain editor
-                                          (get-elements-by-tag-name "P"))))
-              (loop for p in all-paragraphs
-                    do (chain p
-                              class-list
-                              (remove "active")))
-              (chain current-paragraph
-                     class-list
-                     (add "active"))))))
+                   (editor (get-editor-content-node current-paragraph)))
+              (when editor
+                (let ((all-paragraphs (chain editor
+                                             (get-elements-by-tag-name "P"))))
+                  (loop for p in all-paragraphs
+                        do (chain p
+                                  class-list
+                                  (remove "active")))
+                  (chain current-paragraph
+                         class-list
+                         (add "active"))))))))
 
-      (defun on-caret-change ()
+      (defun on-caret-change (event)
+        (chain console (log "PROCESSING" event))
         (show-path)
         (update-active-paragraph))
       
@@ -347,6 +370,11 @@
            (change-text event "move-cursor-down")
            (chain event
                   (prevent-default)))
+          ((= (@ event key-code)
+              ,shortcut)
+           (process-shortcut event)
+           (chain event
+                  (prevent-default)))
           (t
            (update-active-paragraph))))
 
@@ -361,21 +389,29 @@
                  (prevent-default))))
       
       (defun setup ()
+        (defun if-inside-editor (handler)
+          "Returns a handler which is executed only if event corresponds to a current editor widget."
+          (lambda (event)
+            (let ((content (get-editor-content-node (@ event target))))
+              (when (and content
+                         (eql (@ content parent-node)
+                              this))
+                (handler event)))))
         (chain this
                (add-event-listener "click"
-                                   on-caret-change))
+                                   (if-inside-editor on-caret-change)))
         (chain this
                (add-event-listener "beforeinput"
-                                   before-input)) 
+                                   (if-inside-editor before-input))) 
         (chain this
                (add-event-listener "input"
-                                   on-editor-input))
+                                   (if-inside-editor on-editor-input)))
         (chain this
                (add-event-listener "keydown"
-                                   on-keydown))
+                                   (if-inside-editor on-keydown )))
         (chain this
                (add-event-listener "paste"
-                                   on-paste)))
+                                   (if-inside-editor on-paste))))
 
       (defun on-editor-input (event)
         ;; (chain console

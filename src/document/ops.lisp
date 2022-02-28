@@ -5,6 +5,7 @@
   (:import-from #:reblocks-text-editor/utils/markdown)
   (:import-from #:reblocks-text-editor/html)
   (:import-from #:alexandria
+                #:length=
                 #:lastcar)
   (:import-from #:reblocks-text-editor/document/editable
                 #:get-next-reference-id)
@@ -538,8 +539,33 @@
     (values to-node)))
 
 
+(defun parse-scriba-nodes (root-node &aux (format (make-instance 'scriba:scriba)))
+  "Parses text-nodes inside the tree as a scriba documents."
+  (flet ((parse (node depth)
+           (declare (ignore depth))
+           (typecase node
+             (common-doc:text-node
+              (let* ((text (common-doc:text node))
+                     (doc (common-doc.format:parse-document format
+                                                            text))
+                     (content (common-doc:children doc)))
+                (assert (length= 1 content))
+                
+                ;; If there we were able to split text into separate
+                ;; nodes, then return them as a single content-node
+                (let ((content-node (first content)))
+                  (if (and (typep content-node 'node-with-children)
+                           (serapeum:length< 1 (common-doc:children content-node)))
+                      content-node
+                      ;; otherwise just return original text node
+                      node))))
+             (t node))))
+    (map-document root-node #'parse)))
+
+
 (defun prepare-new-content (document text)
-  (let ((paragraph (reblocks-text-editor/utils/markdown::from-markdown text)))
+  (let* ((paragraph (reblocks-text-editor/utils/markdown::from-markdown text))
+         (paragraph (parse-scriba-nodes paragraph)))
     (add-reference-ids document
                        :to-node paragraph)))
 

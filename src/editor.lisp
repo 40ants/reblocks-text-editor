@@ -5,6 +5,9 @@
   (:import-from #:reblocks-parenscript)
   (:import-from #:reblocks-lass)
   (:import-from #:reblocks-text-editor/html)
+  (:import-from #:reblocks-text-editor/html/markdown-link)
+  (:import-from #:reblocks-text-editor/html/web-link)
+  (:import-from #:reblocks-text-editor/html/document-link)
   (:import-from #:reblocks-text-editor/frontend/js)
   (:import-from #:reblocks-text-editor/frontend/css)
   (:import-from #:reblocks-text-editor/document/editable)
@@ -94,6 +97,19 @@ Second Line.
       (ops::ensure-cursor-position-is-correct next-paragraph cursor-position))))
 
 
+(defun insert-node (document new-node relative-to &key (position :after))
+  (ops::add-reference-ids document
+                          :to-node new-node)
+  (ops::insert-node document
+                    new-node
+                    :position position
+                    :relative-to relative-to)
+
+  (let* ((last-child (lastcar (common-doc:children new-node)))
+         (last-child-len (length (to-markdown last-child))))
+    (ops::ensure-cursor-position-is-correct last-child last-child-len)))
+
+
 (defun paste-text (document path cursor-position pasted-text)
   (log:info "User wants to insert ~A" pasted-text)
 
@@ -112,15 +128,7 @@ Second Line.
                    (new-node (common-doc:make-web-link
                               pasted-text
                               (list (common-doc:make-text title)))))
-              (ops::add-reference-ids document
-                                      :to-node new-node)
-              (ops::insert-node document
-                                new-node
-                                :relative-to node)
-
-              (let* ((last-child (lastcar (common-doc:children new-node)))
-                     (last-child-len (length (to-markdown last-child))))
-                (ops::ensure-cursor-position-is-correct last-child last-child-len))))
+              (insert-node document new-node node)))
            (t
             (log:error "Unable to find node for"
                        cursor-position
@@ -131,6 +139,11 @@ Second Line.
   (:documentation "Called after the each document update.")
   (:method ((widget editor))
     (values)))
+
+
+(defgeneric on-shortcut (widget key-code node cursor-position)
+  (:documentation "Called when user hits a registered shortcut.")
+  (:method ((widget editor) key-code node cursor-position)))
 
 
 (defmethod reblocks/widget:render ((widget editor))
@@ -213,15 +226,29 @@ Second Line.
                      (t
                       (process-usual-update document path new-html cursor-position))))
 
-                 (on-document-update widget))))
+                 (on-document-update widget)))
+             (process-shortcut (&key key-code version path cursor-position &allow-other-keys)
+               (bordeaux-threads:with-lock-held ((reblocks-text-editor/document/editable::document-lock document))
+                 (when (> version (reblocks-text-editor/document/editable::content-version document))
+                   (setf (reblocks-text-editor/document/editable::content-version document)
+                         version)
+                   (log:info "Key" key-code "pressed")
+
+                   (let ((paragraph (reblocks-text-editor/document/ops::find-changed-node document path)))
+                     (multiple-value-bind (node new-cursor-position)
+                         (ops::find-node-at-position paragraph
+                                                     cursor-position)
+                       (on-shortcut widget key-code node new-cursor-position)))))))
      
       (let ((action-code (reblocks/actions:make-action #'process-update))
+            (shortcut-action-code (reblocks/actions:make-action #'process-shortcut))
             ;; We need this flag to make sure our document will have
             ;; a visible markup on active paragraph.
             (reblocks-text-editor/html::*render-markup* t))
         (reblocks/html:with-html
           (:div :class "content"
                 :data-action-code action-code
+                :data-shortcut-code shortcut-action-code
                 :data-version (reblocks-text-editor/document/editable::content-version document)
                 :contenteditable ""
                 :onload "setup()"
@@ -248,6 +275,7 @@ Second Line.
 
 
 (defmethod reblocks/dependencies:get-dependencies ((widget editor))
-  (list* (reblocks-text-editor/frontend/js::make-js-code)
+  ;; https://keycode.info/
+  (list* (reblocks-text-editor/frontend/js::make-js-code 191)
          (reblocks-text-editor/frontend/css::make-css-code)
          (call-next-method)))
