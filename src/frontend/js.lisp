@@ -155,6 +155,7 @@
                  (text (@ edited-node inner-h-t-m-l))
                  (cursor-position (caret-position))
                  (args (create
+                        :type "update"
                         :change-type change-type
                         :new-html text
                         :path path
@@ -178,12 +179,13 @@
                  ;; (target (@ event target inner-h-t-m-l))
                  (cursor-position (caret-position))
                  (args (create
+                        :type "shortcut"
                         :key-code (@ event key-code)
                         :path path
                         :cursor-position cursor-position
                         :version current-version)))
 
-            (initiate-action (@ event target dataset shortcut-code)
+            (initiate-action (@ event target dataset action-code)
                              (create :args args)))))
       
       (defun paste-text (event text)
@@ -293,6 +295,8 @@
       (defun show-path ()
         (let ((path (calculate-path))
               (position (caret-position)))
+          (chain console
+                 (log "New path" path))
           (chain (j-query "#debug")
                  (html (chain -j-s-o-n
                               (stringify
@@ -321,10 +325,43 @@
                          class-list
                          (add "active"))))))))
 
-      (defun on-caret-change (event)
+      (defun open-link (event href)
+        (let* ((content (get-editor-content-node (@ event target)))
+               (current-version
+                 (incf (@ content dataset version))))
+
+          (let* ((path (trim-path-to-nearest-paragraph
+                        (calculate-path)))
+                 (cursor-position (caret-position))
+                 (args (create
+                        :type "link"
+                        :href href
+                        :path path
+                        :cursor-position cursor-position
+                        :version current-version)))
+
+            (initiate-action (@ content dataset action-code)
+                             (create :args args)))))
+
+      (defun get-link-href (path)
+        (loop for idx from (1- (length path)) downto 0
+              for id = (aref path idx)
+              for node = (chain document
+                                (get-element-by-id id))
+              for tag = (@ node tag-name)
+              when (= tag "A")
+                do (return (@ node href))))
+      
+      (defun on-click (event)
         (chain console (log "PROCESSING" event))
-        (show-path)
-        (update-active-paragraph))
+        (let* ((path (calculate-path))
+               (link-href (get-link-href path)))
+          (cond
+            (link-href
+             (open-link event link-href))
+            (t
+             (show-path)
+             (update-active-paragraph)))))
       
       (defun on-keydown (event)
         (chain console
@@ -399,7 +436,7 @@
                 (handler event)))))
         (chain this
                (add-event-listener "click"
-                                   (if-inside-editor on-caret-change)))
+                                   (if-inside-editor on-click)))
         (chain this
                (add-event-listener "beforeinput"
                                    (if-inside-editor before-input))) 

@@ -14,10 +14,12 @@
   ())
 
 
-(defun make-visible-weblink (children uri)
+(defun make-visible-weblink (for-node children uri)
   (make-instance 'visible-weblink
                  :children children
-                 :uri uri))
+                 :uri uri
+                 :reference (format nil "~A-link"
+                                    (common-doc:reference for-node))))
 
 (defmethod to-html ((node common-doc:web-link))
   (reblocks/html:with-html
@@ -39,7 +41,8 @@
            (not (typep node 'visible-weblink)))
       (let ((uri (common-doc:uri node)))
         (list (make-markup2 node "[" "left-bracket")
-              (make-visible-weblink (call-next-method)
+              (make-visible-weblink node
+                                    (call-next-method)
                                     uri)
               (make-markup2 node "]" "right-braket")
               (make-markup2 node "(" "left-paren")

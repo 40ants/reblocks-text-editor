@@ -48,7 +48,7 @@ Second Line.
 (reblocks/widget:defwidget editor ()
   ((document :type reblocks-text-editor/document/editable::editable-document
              :initform (make-initial-document)
-             :reader document)))
+             :accessor document)))
 
 
 (reblocks/widget:defwidget editor-demo ()
@@ -146,6 +146,110 @@ Second Line.
   (:method ((widget editor) key-code node cursor-position)))
 
 
+(defgeneric process-message-from-frontend (widget message-type &rest args &key version &allow-other-keys)
+  (:method ((widget editor) message-type &rest args &key version &allow-other-keys)
+    (let ((document (document widget)))
+      (bordeaux-threads:with-lock-held ((reblocks-text-editor/document/editable::document-lock document))
+        (when (> version (reblocks-text-editor/document/editable::content-version document))
+          (setf (reblocks-text-editor/document/editable::content-version document)
+                version)
+          (cond
+            ((string-equal message-type "update")
+             (apply #'process-update widget args))
+            ((string-equal message-type "shortcut")
+             (apply #'process-shortcut widget args))
+            ((string-equal message-type "link")
+             (apply #'process-link widget args))))))))
+
+
+(defgeneric process-update (widget &key change-type new-html path cursor-position pasted-text &allow-other-keys)
+  (:method (widget &key change-type new-html path cursor-position pasted-text &allow-other-keys)
+    (let ((document (document widget)))
+      (log:error "Processing" new-html path cursor-position change-type)
+    
+      (cond
+        ;; This operation is similar to "split-paragraph"
+        ;; but it splits a paragraph and created a new list
+        ;; item when the cursor is in the list item.
+        ((string= change-type
+                  "split")
+         (reblocks-text-editor/document/ops::split-paragraph
+          document path new-html cursor-position
+          :dont-escape-from-list-item t)
+
+       
+         (let* ((changed-paragraph
+                  (reblocks-text-editor/document/ops::find-changed-node document path))
+                (list-item
+                  (reblocks-text-editor/document/ops::select-outer-list-item
+                   document changed-paragraph)))
+
+           (when list-item
+             (let ((next-paragraphs
+                     (reblocks-text-editor/document/ops::select-siblings-next-to
+                      list-item changed-paragraph)))
+               (mapcar (curry #'reblocks-text-editor/document/ops::delete-node document)
+                       next-paragraphs)
+             
+               (let ((new-list-item
+                       (common-doc:make-list-item next-paragraphs
+                                                  :reference (reblocks-text-editor/document/editable::get-next-reference-id
+                                                              document))))
+                 (reblocks-text-editor/document/ops::insert-node
+                  document new-list-item :relative-to list-item)
+                 ;; When a new list item is inserted
+                 ;; the cursor should be placed on the
+                 ;; first paragraph.
+                 (when next-paragraphs
+                   (reblocks-text-editor/document/ops::ensure-cursor-position-is-correct
+                    (first next-paragraphs)
+                    0)))))))
+        ((string= change-type
+                  "split-paragraph")
+         (reblocks-text-editor/document/ops::split-paragraph
+          document path new-html cursor-position))
+        ((string= change-type
+                  "join-with-prev-paragraph")
+         (reblocks-text-editor/document/ops::join-with-prev-paragraph
+          document path new-html cursor-position))
+        ((string= change-type
+                  "indent")
+         (reblocks-text-editor/document/ops::indent document path cursor-position))
+        ((string= change-type
+                  "dedent")
+         (reblocks-text-editor/document/ops::dedent document path cursor-position))
+        ((string= change-type
+                  "move-cursor-up")
+         (move-cursor-up document path cursor-position))
+        ((string= change-type
+                  "move-cursor-down")
+         (move-cursor-down document path cursor-position))
+        ((string= change-type
+                  "paste")
+         (paste-text document path cursor-position
+                     pasted-text))
+        (t
+         (process-usual-update document path new-html cursor-position)))
+
+      (on-document-update widget))))
+
+
+(defgeneric process-shortcut (widget &key key-code path cursor-position &allow-other-keys)
+  (:method (widget &key key-code path cursor-position &allow-other-keys)
+    (let ((document (document widget)))
+      (log:info "Key" key-code "pressed")
+
+      (let ((paragraph (reblocks-text-editor/document/ops::find-changed-node document path)))
+        (multiple-value-bind (node new-cursor-position)
+            (ops::find-node-at-position paragraph
+                                        cursor-position)
+          (on-shortcut widget key-code node new-cursor-position))))))
+
+(defgeneric process-link (widget &key href &allow-other-keys)
+  (:method (widget &key href &allow-other-keys)
+    (log:info "Link" href "was clicked")))
+
+
 (defmethod reblocks/widget:render ((widget editor))
   (let ((document (document widget)))
     (setf *document*
@@ -154,101 +258,16 @@ Second Line.
           widget)
 
 
-    (labels ((process-update (&key change-type version new-html path cursor-position pasted-text &allow-other-keys)
-               (bordeaux-threads:with-lock-held ((reblocks-text-editor/document/editable::document-lock document))
-                 (when (> version (reblocks-text-editor/document/editable::content-version document))
-                   (log:error "Processing" new-html path cursor-position version change-type)
-                  
-                   (setf (reblocks-text-editor/document/editable::content-version document)
-                         version)
-
-                   (cond
-                     ;; This operation is similar to "split-paragraph"
-                     ;; but it splits a paragraph and created a new list
-                     ;; item when the cursor is in the list item.
-                     ((string= change-type
-                               "split")
-                      (reblocks-text-editor/document/ops::split-paragraph
-                       document path new-html cursor-position
-                       :dont-escape-from-list-item t)
-
-                     
-                      (let* ((changed-paragraph
-                               (reblocks-text-editor/document/ops::find-changed-node document path))
-                             (list-item
-                               (reblocks-text-editor/document/ops::select-outer-list-item
-                                document changed-paragraph)))
-
-                        (when list-item
-                          (let ((next-paragraphs
-                                  (reblocks-text-editor/document/ops::select-siblings-next-to
-                                   list-item changed-paragraph)))
-                            (mapcar (curry #'reblocks-text-editor/document/ops::delete-node document)
-                                    next-paragraphs)
-                           
-                            (let ((new-list-item
-                                    (common-doc:make-list-item next-paragraphs
-                                                               :reference (reblocks-text-editor/document/editable::get-next-reference-id
-                                                                           document))))
-                              (reblocks-text-editor/document/ops::insert-node
-                               document new-list-item :relative-to list-item)
-                              ;; When a new list item is inserted
-                              ;; the cursor should be placed on the
-                              ;; first paragraph.
-                              (when next-paragraphs
-                                (reblocks-text-editor/document/ops::ensure-cursor-position-is-correct
-                                 (first next-paragraphs)
-                                 0)))))))
-                     ((string= change-type
-                               "split-paragraph")
-                      (reblocks-text-editor/document/ops::split-paragraph
-                       document path new-html cursor-position))
-                     ((string= change-type
-                               "join-with-prev-paragraph")
-                      (reblocks-text-editor/document/ops::join-with-prev-paragraph
-                       document path new-html cursor-position))
-                     ((string= change-type
-                               "indent")
-                      (reblocks-text-editor/document/ops::indent document path cursor-position))
-                     ((string= change-type
-                               "dedent")
-                      (reblocks-text-editor/document/ops::dedent document path cursor-position))
-                     ((string= change-type
-                               "move-cursor-up")
-                      (move-cursor-up document path cursor-position))
-                     ((string= change-type
-                               "move-cursor-down")
-                      (move-cursor-down document path cursor-position))
-                     ((string= change-type
-                               "paste")
-                      (paste-text document path cursor-position
-                                  pasted-text))
-                     (t
-                      (process-usual-update document path new-html cursor-position))))
-
-                 (on-document-update widget)))
-             (process-shortcut (&key key-code version path cursor-position &allow-other-keys)
-               (bordeaux-threads:with-lock-held ((reblocks-text-editor/document/editable::document-lock document))
-                 (when (> version (reblocks-text-editor/document/editable::content-version document))
-                   (setf (reblocks-text-editor/document/editable::content-version document)
-                         version)
-                   (log:info "Key" key-code "pressed")
-
-                   (let ((paragraph (reblocks-text-editor/document/ops::find-changed-node document path)))
-                     (multiple-value-bind (node new-cursor-position)
-                         (ops::find-node-at-position paragraph
-                                                     cursor-position)
-                       (on-shortcut widget key-code node new-cursor-position)))))))
-     
-      (let ((action-code (reblocks/actions:make-action #'process-update))
-            (shortcut-action-code (reblocks/actions:make-action #'process-shortcut))
+    (labels ((process-message (&rest args &key type &allow-other-keys)
+               (let ((args (alexandria:remove-from-plist args :type)))
+                 (apply #'process-message-from-frontend widget type args))))
+      (let ((action-code (reblocks/actions:make-action #'process-message))
             ;; We need this flag to make sure our document will have
             ;; a visible markup on active paragraph.
             (reblocks-text-editor/html::*render-markup* t))
         (reblocks/html:with-html
           (:div :class "content"
                 :data-action-code action-code
-                :data-shortcut-code shortcut-action-code
                 :data-version (reblocks-text-editor/document/editable::content-version document)
                 :contenteditable ""
                 :onload "setup()"

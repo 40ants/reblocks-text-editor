@@ -549,16 +549,21 @@
                      (doc (common-doc.format:parse-document format
                                                             text))
                      (content (common-doc:children doc)))
-                (assert (length= 1 content))
+                (cond
+                  ((length= 0 content)
+                   node)
+                  ((length= 1 content)
                 
-                ;; If there we were able to split text into separate
-                ;; nodes, then return them as a single content-node
-                (let ((content-node (first content)))
-                  (if (and (typep content-node 'node-with-children)
-                           (serapeum:length< 1 (common-doc:children content-node)))
-                      content-node
-                      ;; otherwise just return original text node
-                      node))))
+                   ;; If there we were able to split text into separate
+                   ;; nodes, then return them as a single content-node
+                   (let ((content-node (first content)))
+                     (if (and (typep content-node 'node-with-children)
+                              (serapeum:length< 1 (common-doc:children content-node)))
+                         content-node
+                         ;; otherwise just return original text node
+                         node)))
+                  (t
+                   (error "Why does content has more than one node? This is unexpected.")))))
              (t node))))
     (map-document root-node #'parse)))
 

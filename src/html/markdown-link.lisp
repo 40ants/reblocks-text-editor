@@ -26,7 +26,8 @@
              (uri (quri:make-uri :scheme "internal"
                                  :path definition)))
         (list (make-markup2 node "[" "lb-title")
-              (make-visible-weblink (call-next-method)
+              (make-visible-weblink node
+                                    (call-next-method)
                                     uri)
               (make-markup2 node "]" "rb-title")
               (make-markup2 node "[" "lb-def")
