@@ -546,9 +546,12 @@
            (typecase node
              (common-doc:text-node
               (let* ((text (common-doc:text node))
-                     (doc (common-doc.format:parse-document format
-                                                            text))
-                     (content (common-doc:children doc)))
+                     ;; TODO: ignore only ESRAP:ESRAP-PARSE-ERROR here
+                     (doc (ignore-errors
+                           (common-doc.format:parse-document format
+                                                             text)))
+                     (content (when doc
+                                (common-doc:children doc))))
                 (cond
                   ((length= 0 content)
                    node)
@@ -568,8 +571,21 @@
     (map-document root-node #'parse)))
 
 
+;; (defun replace-markdown-links (root-node &aux (format (make-instance 'scriba:scriba)))
+;;   "Markdown links with url scheme internal:// should be replaced with DOCUMENT-LINK"
+;;   (flet ((parse (node depth)
+;;            (declare (ignore depth))
+;;            (typecase node
+;;              (commondoc-markdown:markdown-link
+;;               (let* (()
+;;                      (content (common-doc:children node)))))
+;;              (t node))))
+;;     (map-document root-node #'parse)))
+
+
 (defun prepare-new-content (document text)
   (let* ((paragraph (reblocks-text-editor/utils/markdown::from-markdown text))
+         ;; (paragraph (replace-markdown-links paragraph))
          (paragraph (parse-scriba-nodes paragraph)))
     (add-reference-ids document
                        :to-node paragraph)))
