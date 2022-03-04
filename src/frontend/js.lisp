@@ -454,6 +454,15 @@
         ;; (chain console
         ;;        (log "Handling oninput event" event current-version))
         (change-text event "modify"))
+
+      (defun symbol-before-caret ()
+        (let ((position (caret-position)))
+          (when (> position 0)
+            (elt (chain window
+                        (get-selection)
+                        anchor-node
+                        text-content)
+                 (1- position)))))
       
       (defun before-input (event)
         (let ((type (@ event
@@ -468,9 +477,11 @@
                    (prevent-default)))
 
           (when (and (= type "deleteContentBackward")
-                     (= (caret-position)
-                        0))
+                     (let ((symbol-before (symbol-before-caret)))
+                       (or (null symbol-before)
+                           (= symbol-before
+                              "​"))))
             (change-text event "join-with-prev-paragraph")
-            
+             
             (chain event
                    (prevent-default))))))))

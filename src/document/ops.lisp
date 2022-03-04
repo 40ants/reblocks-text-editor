@@ -243,8 +243,19 @@
         (cond
           ;; Here we are having a previous paragraph and want
           ;; to join it with the current:
-          (previous-paragraph
-           (log:error "Joining with the previous paragraph")
+          ((and previous-paragraph
+                ;; We only want to join the current
+                ;; paragraph ot a previous list item
+                ;; if the current paragraph is not
+                ;; at the beginning of another list item.
+                ;; For processing this case we have another
+                ;; branch of the COND.
+                (or
+                 (null current-list-item)
+                 (equal current-list-item
+                        (select-outer-list-item document
+                                                previous-paragraph))))
+           (log:error "Joining with the previous paragraph" previous-paragraph)
            (check-type previous-paragraph common-doc:paragraph)
            
            (let* ((first-part (reblocks-text-editor/utils/markdown::to-markdown previous-paragraph))
@@ -356,6 +367,9 @@
 
 
 (defun join-list-items (widget previous-list-item current-list-item)
+  (log:error "Joining list items"
+             previous-list-item
+             current-list-item)
   (let ((items-to-move (children current-list-item)))
     (append-children widget previous-list-item items-to-move)
     (delete-node widget current-list-item)
