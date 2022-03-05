@@ -235,6 +235,14 @@
                 do (return node)))
 
 
+      (defun get-current-paragraph ()
+        (let* ((selection (chain window
+                                 (get-selection)))
+               (node (@ selection
+                        base-node))
+               (paragraph (go-up-to "P" node)))
+          paragraph))
+
       (defun caret-position ()
         ;; Idea was taken from
         ;; https://github.com/accursoft/caret/blob/922257adae80c529c237deaddc49f65d7c794534/jquery.caret.js#L17-L29
@@ -455,14 +463,19 @@
         ;;        (log "Handling oninput event" event current-version))
         (change-text event "modify"))
 
-      (defun symbol-before-caret ()
-        (let ((position (caret-position)))
-          (when (> position 0)
-            (elt (chain window
-                        (get-selection)
-                        anchor-node
-                        text-content)
-                 (1- position)))))
+      (defun at-the-paragraph-beginning ()
+        (let* ((paragraph (get-current-paragraph))
+               (position (caret-position)))
+          (when (and paragraph
+                     (> position 0))
+            (let* ((content (@ paragraph
+                               inner-text))
+                   (has-only-zero-spaces t))
+              (loop for idx from (1- position) downto 0
+                    for symbol = (elt content idx)
+                    unless (= symbol "​")
+                      do (setf has-only-zero-spaces nil))
+              (values has-only-zero-spaces)))))
       
       (defun before-input (event)
         (let ((type (@ event
@@ -477,10 +490,7 @@
                    (prevent-default)))
 
           (when (and (= type "deleteContentBackward")
-                     (let ((symbol-before (symbol-before-caret)))
-                       (or (null symbol-before)
-                           (= symbol-before
-                              "​"))))
+                     (at-the-paragraph-beginning))
             (change-text event "join-with-prev-paragraph")
              
             (chain event
