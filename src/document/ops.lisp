@@ -88,6 +88,9 @@
     (map-document document #'do-replace)))
 
 (defun replace-node-content (document node-to-replace new-children)
+  (log:debug "Replacing node content"
+             node-to-replace
+             new-children)
   (flet ((do-replace (node depth)
            (declare (ignore depth))
            (when (eql node node-to-replace)
@@ -232,8 +235,8 @@
    previous list-item."
   (let ((paragraph-to-delete (find-changed-node document path))
         (text-to-append (reblocks-text-editor/utils/text::remove-html-tags new-html)))
-    (log:error "Joining paragraph" path new-html cursor-position paragraph-to-delete)
-    
+    (log:debug "Joining paragraph" path new-html cursor-position paragraph-to-delete)
+
     (when paragraph-to-delete
       (let* ((previous-paragraph (find-previous-paragraph document
                                                           paragraph-to-delete))
@@ -278,7 +281,7 @@
           ;; list.
           ((and current-list-item
                 (not previous-list-item))
-           (log:error "Extracting content of the first list item")
+           (log:debug "Extracting content of the first list item")
            
            (let ((current-list (select-outer-list document current-list-item))
                  (items-to-move (children current-list-item)))
@@ -620,13 +623,6 @@
          (next-node (find-next-sibling document paragraph)))
 
     (etypecase new-content
-      (common-doc:paragraph
-       (replace-node-content document
-                             paragraph
-                             (children new-content))
-
-       (dom::update-node document paragraph)
-       (values paragraph cursor-position))
       ;; A new list item was created by manual enter of the "* "
       ;; at the beginning of the paragraph:
       (common-doc:unordered-list
@@ -667,7 +663,16 @@
                               :relative-to paragraph)
             (dom::delete-node document paragraph)
             (values list-node
-                    (decf cursor-position 2)))))))))
+                    (decf cursor-position 2))))))
+      ;; Otherwise, we just insert
+      ;; node's content into existing paragraph:
+      (common-doc:paragraph
+       (replace-node-content document
+                             paragraph
+                             (children new-content))
+
+       (dom::update-node document paragraph)
+       (values paragraph cursor-position)))))
 
 
 

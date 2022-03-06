@@ -468,7 +468,7 @@
         (let* ((paragraph (get-current-paragraph))
                (position (caret-position)))
           (when (and paragraph
-                     (> position 0))
+                     (>= position 0))
             (let* ((content (@ paragraph
                                inner-text))
                    (has-only-zero-spaces t))
