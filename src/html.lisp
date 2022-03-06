@@ -24,6 +24,11 @@
   (:documentation "Returns an optional string with HTML class of the element."))
 
 
+(defun children-including-markup (node)
+  (let ((*render-markup* t))
+    (common-doc:children node)))
+
+
 (defun to-html-string (node)
   (let ((*render-markup* t))
     (with-output-to-string (reblocks/html:*stream*)

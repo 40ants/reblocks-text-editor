@@ -4,7 +4,8 @@
   (:import-from #:common-html)
   (:import-from #:reblocks-parenscript)
   (:import-from #:reblocks-lass)
-  (:import-from #:reblocks-text-editor/html)
+  (:import-from #:reblocks-text-editor/html
+                #:children-including-markup)
   (:import-from #:reblocks-text-editor/html/markdown-link)
   (:import-from #:reblocks-text-editor/html/web-link)
   (:import-from #:reblocks-text-editor/html/document-link)
@@ -105,7 +106,7 @@ Second Line.
                     :position position
                     :relative-to relative-to)
 
-  (let* ((last-child (lastcar (common-doc:children new-node)))
+  (let* ((last-child (lastcar (children-including-markup new-node)))
          (last-child-len (length (to-markdown last-child))))
     (ops::ensure-cursor-position-is-correct last-child last-child-len)))
 
