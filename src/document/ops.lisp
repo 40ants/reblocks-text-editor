@@ -23,7 +23,7 @@
     (when (eql possibly-new-node cnode)
       (setf (children cnode)
             (loop for child in (children cnode)
-                  unless (reblocks-text-editor/html::markup-p child)
+                  unless (reblocks-text-editor/html/markup::markup-p child)
                     collect (map-document child function
                                           (1+ depth)
                                           make-bindings))))
@@ -360,6 +360,27 @@
                                               ;; the cursor will be at the beginning
                                               0)))))))
 
+(defun insert-into-paragraph (document path cursor-position node)
+  "Inserts node into paragraph into the cursor position."
+  (let ((changed-paragraph (find-changed-node document path)))
+    (when changed-paragraph
+      (add-reference-ids document :to-node node)
+      
+      (let* ((plain-text (reblocks-text-editor/utils/markdown::to-markdown changed-paragraph))
+             (text-before-cursor (subseq plain-text 0 (min cursor-position
+                                                           (length plain-text))))
+             (text-after-cursor (subseq plain-text (min cursor-position
+                                                        (length plain-text))))
+             (nodes-before (common-doc:children (prepare-new-content document text-before-cursor)))
+             (nodes-after (common-doc:children (prepare-new-content document text-after-cursor)))
+             (new-nodes (append nodes-before
+                                (list node)
+                                nodes-after)))
+
+        (update-paragraph-content document changed-paragraph new-nodes cursor-position)
+        (place-cursor-after-the node)))))
+
+
 (defun append-children (widget to-node nodes-to-append)
   "Appends NODES-TO-APPEND to the container TO-NODE"
   (check-type to-node node-with-children)
@@ -616,13 +637,21 @@
   (:documentation "Deletes a node from container"))
 
 
-(defun update-paragraph-content (document paragraph plain-text cursor-position)
+(defun update-paragraph-content (document paragraph new-content cursor-position)
   ;; Here we are updating our document tree
-  (let* ((new-content (prepare-new-content document plain-text))
+  (log:debug "Updating paragraph content"
+             paragraph
+             new-content
+             cursor-position)
+  (let* (;; (new-content (prepare-new-content document plain-text))
          (previous-node (find-previous-sibling document paragraph))
          (next-node (find-next-sibling document paragraph)))
 
     (etypecase new-content
+      (string
+       (update-paragraph-content document paragraph
+                                 (prepare-new-content document new-content)
+                                 cursor-position))
       ;; A new list item was created by manual enter of the "* "
       ;; at the beginning of the paragraph:
       (common-doc:unordered-list
@@ -667,16 +696,21 @@
       ;; Otherwise, we just insert
       ;; node's content into existing paragraph:
       (common-doc:paragraph
+       (update-paragraph-content document paragraph
+                                 (common-doc:children
+                                  new-content)
+                                 cursor-position))
+      (list
        (replace-node-content document
                              paragraph
-                             (children new-content))
+                             new-content)
 
        (dom::update-node document paragraph)
        (values paragraph cursor-position)))))
 
 
 
-(defun ensure-cursor-position-is-correct (changed-node cursor-position)
+(defun ensure-cursor-position-is-correct (changed-node cursor-position &key from-the-end)
   ;; We need to move cursor because in HTML cursor
   ;; position is relative to the most inner element
   ;; and we might introduce some markup elements during
@@ -686,11 +720,23 @@
                              cursor-position)
     (cond
       (node
-       (dom::move-cursor node new-cursor-position))
+       (dom::move-cursor node new-cursor-position :from-the-end from-the-end))
       (t
        (log:error "Unable to find node for"
                   cursor-position
                   (reblocks-text-editor/html::to-html-string changed-node))))))
+
+
+(defun place-cursor-after-the (node)
+    (let ((last-node
+            (typecase node
+              (node-with-children
+               (lastcar
+                (reblocks-text-editor/html::children-including-markup node)))
+              (t node))))
+      (ensure-cursor-position-is-correct last-node
+                                         0
+                                         :from-the-end t)))
 
 
 (defun last-child-of (node)

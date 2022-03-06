@@ -111,29 +111,41 @@ Second Line.
     (ops::ensure-cursor-position-is-correct last-child last-child-len)))
 
 
+(defun make-node-from-pasted-text (text)
+  (cond
+    ((or (str:starts-with-p "http://" text)
+         (str:starts-with-p "https://" text))
+     (let ((title (or (retrieve-url-title text)
+                      text)))
+       (common-doc:make-web-link
+                      text
+                      (list (common-doc:make-text title)))))
+    (:otherwise
+     (common-doc:make-text text))))
+
+
 (defun paste-text (document path cursor-position pasted-text)
-  (log:info "User wants to insert ~A" pasted-text)
+  (log:info "User wants to paste this text \"~A\"" pasted-text)
+
+  (ops::insert-into-paragraph document path cursor-position
+                              (make-node-from-pasted-text pasted-text))
   
-  (let* ((paragraph (reblocks-text-editor/document/ops::find-changed-node document path)))
-    (cond
-      ((or (str:starts-with-p "http://" pasted-text)
-           (str:starts-with-p "https://" pasted-text))
-       (multiple-value-bind (node new-cursor-position)
-           (ops::find-node-at-position paragraph
-                                       cursor-position)
-         (declare (ignore new-cursor-position))
-         (cond
-           (node
-            (let* ((title (or (retrieve-url-title pasted-text)
-                              pasted-text))
-                   (new-node (common-doc:make-web-link
-                              pasted-text
-                              (list (common-doc:make-text title)))))
-              (insert-node document new-node node)))
-           (t
-            (log:error "Unable to find node for"
-                       cursor-position
-                       (reblocks-text-editor/html::to-html-string paragraph)))))))))
+  ;; (let* ((paragraph (reblocks-text-editor/document/ops::find-changed-node document path)))
+  ;;   (cond
+  ;;     (
+  ;;      (multiple-value-bind (node new-cursor-position)
+  ;;          (ops::find-node-at-position paragraph
+  ;;                                      cursor-position)
+  ;;        (declare (ignore new-cursor-position))
+  ;;        (cond
+  ;;          (node
+  ;;           (let ((new-node (make-node-from-pasted-text text)))
+  ;;             (insert-node document new-node node)))
+  ;;          (t
+  ;;           (log:error "Unable to find node for"
+  ;;                      cursor-position
+  ;;                      (reblocks-text-editor/html::to-html-string paragraph))))))))
+  )
 
 
 (defgeneric on-document-update (widget)

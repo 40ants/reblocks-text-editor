@@ -100,6 +100,7 @@
       (defun set-cursor (args)
         (let* ((element-id (@ args node-id))
                (position (@ args position))
+               (from-the-end (@ args from-the-end))
                (element
                  (chain document
                         (get-element-by-id element-id)))
@@ -113,7 +114,12 @@
                      (@ element
                         child-nodes
                         0)
-                     position))
+                     (if from-the-end
+                         (- (chain element
+                                   inner-text
+                                   length)
+                            position)
+                         position)))
              (chain range
                     (collapse t))
              (chain sel

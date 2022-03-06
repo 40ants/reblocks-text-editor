@@ -62,10 +62,13 @@
   "Updates given node on the frontend"
   (replace-node document node node))
 
-(defun move-cursor (node new-cursor-position)
+(defun move-cursor (node new-cursor-position &key from-the-end)
   (check-type node common-doc:document-node)
   (check-type new-cursor-position integer)
 
   (reblocks/commands:add-command 'set-cursor
                                  :node-id (reference node)
-                                 :position new-cursor-position))
+                                 :position new-cursor-position
+                                 :from-the-end (if from-the-end
+                                                   :true
+                                                   :false)))
