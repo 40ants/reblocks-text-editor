@@ -112,7 +112,7 @@ Second Line.
 
 (defun paste-text (document path cursor-position pasted-text)
   (log:info "User wants to insert ~A" pasted-text)
-
+  
   (let* ((paragraph (reblocks-text-editor/document/ops::find-changed-node document path)))
     (cond
       ((or (str:starts-with-p "http://" pasted-text)

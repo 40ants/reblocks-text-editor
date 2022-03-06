@@ -197,6 +197,7 @@
                       (calculate-path)))
                (cursor-position (caret-position))
                (args (create
+                      :type "update"
                       :change-type "paste"
                       :pasted-text text
                       :path path
