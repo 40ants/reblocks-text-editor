@@ -27,6 +27,8 @@
                 #:curry)
   (:import-from #:reblocks-text-editor/utils/http
                 #:retrieve-url-title)
+  (:import-from #:serapeum
+                #:slice)
   (:local-nicknames (#:ops #:reblocks-text-editor/document/ops))
   (:export
    #:on-document-update))
@@ -111,41 +113,36 @@ Second Line.
     (ops::ensure-cursor-position-is-correct last-child last-child-len)))
 
 
-(defun make-node-from-pasted-text (text)
+(defun make-node-from-pasted-text (text-before pasted-text)
   (cond
-    ((or (str:starts-with-p "http://" text)
-         (str:starts-with-p "https://" text))
-     (let ((title (or (retrieve-url-title text)
-                      text)))
+    ((and (or (str:starts-with-p "http://" pasted-text)
+              (str:starts-with-p "https://" pasted-text))
+          ;; We don't want to expand link when inserting
+          ;; url after the text like "[some]("
+          (not (cl-ppcre:all-matches "\\[[^]]*\\]\\($" text-before)))
+     (let* ((url pasted-text)
+            (title (or (retrieve-url-title url)
+                       url)))
        (common-doc:make-web-link
-                      text
+                      url
                       (list (common-doc:make-text title)))))
     (:otherwise
-     (common-doc:make-text text))))
+     (common-doc:make-text pasted-text))))
 
 
 (defun paste-text (document path cursor-position pasted-text)
   (log:info "User wants to paste this text \"~A\"" pasted-text)
 
-  (ops::insert-into-paragraph document path cursor-position
-                              (make-node-from-pasted-text pasted-text))
-  
-  ;; (let* ((paragraph (reblocks-text-editor/document/ops::find-changed-node document path)))
-  ;;   (cond
-  ;;     (
-  ;;      (multiple-value-bind (node new-cursor-position)
-  ;;          (ops::find-node-at-position paragraph
-  ;;                                      cursor-position)
-  ;;        (declare (ignore new-cursor-position))
-  ;;        (cond
-  ;;          (node
-  ;;           (let ((new-node (make-node-from-pasted-text text)))
-  ;;             (insert-node document new-node node)))
-  ;;          (t
-  ;;           (log:error "Unable to find node for"
-  ;;                      cursor-position
-  ;;                      (reblocks-text-editor/html::to-html-string paragraph))))))))
-  )
+  (let* ((current-paragraph
+           (reblocks-text-editor/document/ops::find-changed-node document path))
+         (text (to-markdown current-paragraph
+                            ;; It is important to not trim a space,
+                            ;; otherwise a space before the cursor will be lost:
+                            :trim-spaces nil))
+         (text-before (slice text 0 cursor-position))
+         (new-node (make-node-from-pasted-text text-before pasted-text)))
+    (ops::insert-into-paragraph document path cursor-position
+                                new-node)))
 
 
 (defgeneric on-document-update (widget)

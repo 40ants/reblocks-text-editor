@@ -2,7 +2,8 @@
   (:use #:cl)
   (:import-from #:common-doc
                 #:children)
-  (:import-from #:reblocks-text-editor/utils/markdown)
+  (:import-from #:reblocks-text-editor/utils/markdown
+                #:to-markdown)
   (:import-from #:reblocks-text-editor/utils/text)
   (:import-from #:reblocks-text-editor/html)
   (:import-from #:alexandria
@@ -10,6 +11,8 @@
                 #:lastcar)
   (:import-from #:reblocks-text-editor/document/editable
                 #:get-next-reference-id)
+  (:import-from #:serapeum
+                #:slice)
   (:local-nicknames (#:dom #:reblocks-text-editor/dom/ops)))
 (in-package #:reblocks-text-editor/document/ops)
 
@@ -378,11 +381,11 @@
     (when changed-paragraph
       (add-reference-ids document :to-node node)
       
-      (let* ((plain-text (reblocks-text-editor/utils/markdown::to-markdown changed-paragraph))
-             (text-before-cursor (subseq plain-text 0 (min cursor-position
-                                                           (length plain-text))))
-             (text-after-cursor (subseq plain-text (min cursor-position
-                                                        (length plain-text))))
+      (let* ((plain-text (to-markdown changed-paragraph
+                                      ;; Do not eat the last space:
+                                      :trim-spaces nil))
+             (text-before-cursor (slice plain-text 0 cursor-position))
+             (text-after-cursor (slice plain-text cursor-position))
              (nodes-before (common-doc:children (prepare-new-content document text-before-cursor)))
              (nodes-after (common-doc:children (prepare-new-content document text-after-cursor)))
              (new-nodes (append nodes-before

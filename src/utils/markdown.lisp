@@ -15,13 +15,20 @@
   (:constant :ignore))
 
 
-(defun to-markdown (node)
+(defun to-markdown (node &key (trim-spaces t))
+  "Probably you want to set TRIM-SPACES to NIL when you are
+   rendering to markdown a node which already existed in the
+   document, like a node before the a text to be pasted.
+
+   If you don't do this, then a space before the cursor might be lost."
   (let* ((commondoc-markdown/emitter:*emit-section-anchors* nil)
          (commondoc-markdown/emitter:*generate-short-link-references* nil)
          (reblocks-text-editor/html::*render-markup*)
          (result (common-doc.format:emit-to-string (make-instance 'commondoc-markdown:markdown)
                                                    node)))
-    (reblocks-text-editor/utils/text::trim-spaces result)))
+    (if trim-spaces
+        (reblocks-text-editor/utils/text::trim-spaces result)
+        result)))
 
 
 (defun from-markdown (text)
