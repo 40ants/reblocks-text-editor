@@ -250,14 +250,19 @@
                (paragraph (go-up-to "P" node)))
           paragraph))
 
-      (defun caret-position ()
+      (defun caret-position (options)
         ;; Idea was taken from
         ;; https://github.com/accursoft/caret/blob/922257adae80c529c237deaddc49f65d7c794534/jquery.caret.js#L17-L29
-        (let* ((selection (chain window
+        (let* ((options (or options (create)))
+               (inside-current-node
+                 (@ options inside-current-node))
+               (selection (chain window
                                  (get-selection)))
                (node (@ selection
                         base-node))
-               (paragraph (go-up-to "P" node)))
+               (paragraph (if inside-current-node
+                              node
+                              (go-up-to "P" node))))
           ;; If there is no any range, then we can't
           ;; determine a cursor position:
           (when (and paragraph
@@ -359,18 +364,40 @@
                              (create :args args)))))
 
       (defun get-link-href (path)
-        (loop for idx from (1- (length path)) downto 0
-              for id = (aref path idx)
-              for node = (chain document
-                                (get-element-by-id id))
-              for tag = (@ node tag-name)
-              when (= tag "A")
-                do (return (@ node href))))
+        (let* ((current-element-id
+                 (aref path
+                       (1- (length path))))
+               (current-node (chain document
+                                    (get-element-by-id
+                                     current-element-id)))
+               (current-node-length
+                 (@ current-node
+                    inner-text
+                    length))
+               (caret (caret-position (create "insideCurrentNode" t))))
+          ;; We only return HREF if cursor was placed
+          ;; in the middle of the link, because if it
+          ;; was placed to the end, we only need to
+          ;; activate the current paragraph.
+          (unless (or (= caret
+                         0)
+                      (= caret
+                      current-node-length))
+            (loop for idx from (1- (length path)) downto 0
+                  for id = (aref path idx)
+                  for node = (chain document
+                                    (get-element-by-id id))
+                  for tag = (@ node tag-name)
+                  when (= tag "A")
+                    do (return (@ node href))))))
       
       (defun on-click (event)
-        (chain console (log "PROCESSING" event))
         (let* ((path (calculate-path))
                (link-href (get-link-href path)))
+          (chain console (log "PROCESSING ON CLICK"
+                              event
+                              path
+                              link-href))
           (cond
             (link-href
              (open-link event link-href))
