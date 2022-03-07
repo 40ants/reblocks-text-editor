@@ -3,6 +3,7 @@
   (:import-from #:common-doc
                 #:children)
   (:import-from #:reblocks-text-editor/utils/markdown)
+  (:import-from #:reblocks-text-editor/utils/text)
   (:import-from #:reblocks-text-editor/html)
   (:import-from #:alexandria
                 #:length=
@@ -360,6 +361,17 @@
                                               ;; the cursor will be at the beginning
                                               0)))))))
 
+
+(defun empty-text-node (node)
+  (typecase node
+    (common-doc:text-node
+     (let ((text (common-doc:text node)))
+       (or (string= text "")
+           (string= text reblocks-text-editor/utils/text::+zero-width-space+))))
+    (t
+     nil)))
+
+
 (defun insert-into-paragraph (document path cursor-position node)
   "Inserts node into paragraph into the cursor position."
   (let ((changed-paragraph (find-changed-node document path)))
@@ -375,7 +387,12 @@
              (nodes-after (common-doc:children (prepare-new-content document text-after-cursor)))
              (new-nodes (append nodes-before
                                 (list node)
-                                nodes-after)))
+                                nodes-after))
+             ;; Before update, we need to remove "empty" text nodes having only
+             ;; zero white-space. Otherwise, after the following text editing operation
+             ;; cursor will be moved to incorrect position, jumping one additional
+             ;; character to the right.
+             (new-nodes (remove-if #'empty-text-node new-nodes)))
 
         (update-paragraph-content document changed-paragraph new-nodes cursor-position)
         (place-cursor-after-the node)))))
