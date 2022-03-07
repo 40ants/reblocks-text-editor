@@ -2,6 +2,7 @@
   (:use #:cl)
   (:import-from #:reblocks-parenscript)
   (:import-from #:parenscript
+                #:regex
                 #:chain
                 #:@
                 #:create))
@@ -177,22 +178,36 @@
                              (create :args args)))))
       
       (defun process-shortcut (event)
-        (let ((current-version
-                (incf (@ event target dataset version))))
+        (let* ((path (trim-path-to-nearest-paragraph
+                      (calculate-path)))
+               (paragraph-id (elt path
+                                  (1- (@ path length))))
+               (paragraph
+                 (chain document
+                        (get-element-by-id paragraph-id)))
+               (cursor-position (caret-position))
+               (previous-text (chain paragraph
+                                     inner-text
+                                     (substring 0 cursor-position)))
+               ;; We need this to prevent commands window
+               ;; to popup when the user is writing an URL.
+               (writing-an-url
+                 (chain previous-text
+                        (match (regex "^.*https?:[^ ]*$" )))))
+          
+          (unless writing-an-url
+            (let* ((current-version
+                     (incf (@ event target dataset version)))
+                   (args (create
+                          :type "shortcut"
+                          :key-code (@ event key-code)
+                          :path path
+                          :cursor-position cursor-position
+                          :version current-version)))
 
-          (let* ((path (trim-path-to-nearest-paragraph
-                        (calculate-path)))
-                 ;; (target (@ event target inner-h-t-m-l))
-                 (cursor-position (caret-position))
-                 (args (create
-                        :type "shortcut"
-                        :key-code (@ event key-code)
-                        :path path
-                        :cursor-position cursor-position
-                        :version current-version)))
-
-            (initiate-action (@ event target dataset action-code)
-                             (create :args args)))))
+              (initiate-action (@ event target dataset action-code)
+                               (create :args args))
+              (values t)))))
       
       (defun paste-text (event text)
         (let* ((content-node (get-editor-content-node
@@ -451,9 +466,9 @@
                   (prevent-default)))
           ((= (@ event key-code)
               ,shortcut)
-           (process-shortcut event)
-           (chain event
-                  (prevent-default)))
+           (when (process-shortcut event)
+             (chain event
+                    (prevent-default))))
           (t
            (update-active-paragraph))))
 
