@@ -17,7 +17,12 @@
    (undo-history :type list
                  :initform nil
                  :documentation "Simplest form of undo, using a document stack."
-                 :accessor undo-history)))
+                 :accessor undo-history)
+   (caret-position :initform nil
+                   :documentation "Stores a tuple of two elements.
+                                    The first is a node where caret is located and
+                                    the second is a number of the caret offset."
+                   :accessor caret-position)))
 
 
 (defun get-next-reference-id (document)
@@ -32,8 +37,10 @@
   (push (copy-thing document)
         (undo-history document)))
 
+
 (defun history-pop (document)
-  (prog1 (car (undo-history document))
+  (let ((old-document (car (undo-history document))))
     (setf (undo-history document)
           (cdr
-           (undo-history document)))))
+           (undo-history document)))
+    (values old-document)))

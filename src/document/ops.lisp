@@ -10,6 +10,7 @@
                 #:length=
                 #:lastcar)
   (:import-from #:reblocks-text-editor/document/editable
+                #:caret-position
                 #:get-next-reference-id)
   (:import-from #:serapeum
                 #:slice)
@@ -54,7 +55,7 @@
   (:method ((doc common-doc:document) function &optional (depth 0) make-bindings)
     (setf (children doc)
           (loop for child in (children doc)
-                unless (reblocks-text-editor/html::markup-p child)
+                unless (reblocks-text-editor/html/markup::markup-p child)
                   collect (map-document child function
                                         (1+ depth)
                                         make-bindings)))
@@ -272,7 +273,8 @@
              (update-paragraph-content document previous-paragraph full-text cursor-position)
              (delete-node document
                           paragraph-to-delete)
-             (ensure-cursor-position-is-correct previous-paragraph
+             (ensure-cursor-position-is-correct document
+                                                previous-paragraph
                                                 ;; The cursor now should be
                                                 ;; somewhere in the middle of the new
                                                 ;; paragraph. Right at the end of the
@@ -298,7 +300,8 @@
              (when (zerop (length (children current-list)))
                (delete-node document current-list))
              
-             (ensure-cursor-position-is-correct (first items-to-move)
+             (ensure-cursor-position-is-correct document
+                                                (first items-to-move)
                                                 0)))
           ;; Part where we might join two list-items
           (t
@@ -352,14 +355,16 @@
              ;; next after the list where it was before:
              (insert-node document changed-paragraph
                           :relative-to list-node)
-             (ensure-cursor-position-is-correct changed-paragraph
+             (ensure-cursor-position-is-correct document
+                                                changed-paragraph
                                                 0)))
           (t
            (update-paragraph-content document changed-paragraph text-before-cursor cursor-position)
            (insert-node document
                         new-paragraph
                         :relative-to changed-paragraph)
-           (ensure-cursor-position-is-correct new-paragraph
+           (ensure-cursor-position-is-correct document
+                                              new-paragraph
                                               ;; When newline is inserted
                                               ;; the cursor will be at the beginning
                                               0)))))))
@@ -398,7 +403,7 @@
              (new-nodes (remove-if #'empty-text-node new-nodes)))
 
         (update-paragraph-content document changed-paragraph new-nodes cursor-position)
-        (place-cursor-after-the node)))))
+        (place-cursor-after-the document node)))))
 
 
 (defun append-children (widget to-node nodes-to-append)
@@ -410,14 +415,15 @@
                :position :as-last-child))
 
 
-(defun join-list-items (widget previous-list-item current-list-item)
+(defun join-list-items (document previous-list-item current-list-item)
   (log:error "Joining list items"
              previous-list-item
              current-list-item)
   (let ((items-to-move (children current-list-item)))
-    (append-children widget previous-list-item items-to-move)
-    (delete-node widget current-list-item)
-    (ensure-cursor-position-is-correct (first items-to-move)
+    (append-children document previous-list-item items-to-move)
+    (delete-node document current-list-item)
+    (ensure-cursor-position-is-correct document
+                                       (first items-to-move)
                                        0)))
 
 (defun find-previous-paragraph (document node)
@@ -730,31 +736,37 @@
 
 
 
-(defun ensure-cursor-position-is-correct (changed-node cursor-position &key from-the-end)
+(defun ensure-cursor-position-is-correct (document changed-node caret-position &key from-the-end)
   ;; We need to move cursor because in HTML cursor
   ;; position is relative to the most inner element
   ;; and we might introduce some markup elements during
   ;; PREPARE-NEW-CONTENT phase.
-  (multiple-value-bind (node new-cursor-position)
+  (check-type document reblocks-text-editor/document/editable::editable-document)
+  
+  (multiple-value-bind (node new-caret-position)
       (find-node-at-position changed-node
-                             cursor-position)
+                             caret-position)
     (cond
       (node
-       (dom::move-cursor node new-cursor-position :from-the-end from-the-end))
+       (dom::move-cursor node new-caret-position :from-the-end from-the-end)
+       (setf (caret-position document)
+             (list node new-caret-position)))
       (t
        (log:error "Unable to find node for"
-                  cursor-position
-                  (reblocks-text-editor/html::to-html-string changed-node))))))
+                  caret-position
+                  (reblocks-text-editor/html::to-html-string changed-node))))
+    (values)))
 
 
-(defun place-cursor-after-the (node)
+(defun place-cursor-after-the (document node)
     (let ((last-node
             (typecase node
               (node-with-children
                (lastcar
                 (reblocks-text-editor/html::children-including-markup node)))
               (t node))))
-      (ensure-cursor-position-is-correct last-node
+      (ensure-cursor-position-is-correct document
+                                         last-node
                                          0
                                          :from-the-end t)))
 
@@ -803,7 +815,8 @@
                             :position :after))))
           ;; We need to restore a cursor position
           ;; after nodes movement:
-          (ensure-cursor-position-is-correct current-node
+          (ensure-cursor-position-is-correct document
+                                             current-node
                                              cursor-position))))))
 
 
@@ -857,5 +870,6 @@
              (unless (children parent-list)
                (delete-node document parent-list))))
           
-          (ensure-cursor-position-is-correct current-node
+          (ensure-cursor-position-is-correct document
+                                             current-node
                                              cursor-position))))))

@@ -14,10 +14,11 @@
 
 (defmethod to-html ((node commondoc-markdown:markdown-link))
   (error "Not implemented")
-  (reblocks/html:with-html
-    (:span :id (common-doc:reference node)
-           :class (html-class node)
-           (mapc #'to-html (common-doc:children node)))))
+  ;; (reblocks/html:with-html
+  ;;   (:span :id (common-doc:reference node)
+  ;;          :class (html-class node)
+  ;;          (mapc #'to-html (common-doc:children node))))
+  )
 
 
 (defmethod common-doc:children :around ((node commondoc-markdown:markdown-link))
@@ -43,10 +44,11 @@
 ;; Markdown link should be rendered to Scriba Document, as usual REF
 (defmethod scriba.emitter:emit ((node commondoc-markdown:markdown-link) stream)
   (error "Not implemented")
-  (let ((definition (commondoc-markdown:markdown-link-definition node)))
-    (scriba.emitter::with-tag-name ("ref" stream)
-      (scriba.emitter::with-tag-attrs ((common-doc:metadata node)
-                                       stream
-                                       :extra (list (cons "id" definition)))
-        (scriba.emitter::with-tag-body (stream)
-          (scriba.emitter::emit-children node stream))))))
+  ;; (let ((definition (commondoc-markdown:markdown-link-definition node)))
+  ;;   (scriba.emitter::with-tag-name ("ref" stream)
+  ;;     (scriba.emitter::with-tag-attrs ((common-doc:metadata node)
+  ;;                                      stream
+  ;;                                      :extra (list (cons "id" definition)))
+  ;;       (scriba.emitter::with-tag-body (stream)
+  ;;         (scriba.emitter::emit-children node stream)))))
+  )

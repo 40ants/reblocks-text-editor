@@ -92,7 +92,7 @@ Second Line.
          (prev-paragraph (ops::find-previous-paragraph document current-paragraph)))
     (check-type current-paragraph common-doc:paragraph)
     (when prev-paragraph
-      (ops::ensure-cursor-position-is-correct prev-paragraph cursor-position))))
+      (ops::ensure-cursor-position-is-correct document prev-paragraph cursor-position))))
 
 
 (defun move-cursor-down (document path cursor-position)
@@ -100,7 +100,7 @@ Second Line.
          (next-paragraph (ops::find-next-paragraph document current-paragraph)))
     (check-type current-paragraph common-doc:paragraph)
     (when next-paragraph
-      (ops::ensure-cursor-position-is-correct next-paragraph cursor-position))))
+      (ops::ensure-cursor-position-is-correct document next-paragraph cursor-position))))
 
 
 (defun insert-node (document new-node relative-to &key (position :after))
@@ -113,7 +113,7 @@ Second Line.
 
   (let* ((last-child (lastcar (children-including-markup new-node)))
          (last-child-len (length (to-markdown last-child))))
-    (ops::ensure-cursor-position-is-correct last-child last-child-len)))
+    (ops::ensure-cursor-position-is-correct document last-child last-child-len)))
 
 
 (defun make-node-from-pasted-text (text-before pasted-text)
@@ -161,7 +161,13 @@ Second Line.
   (setf (document widget)
         (reblocks-text-editor/document/editable::history-pop
          (document widget)))
-  (reblocks/widget:update widget))
+  (reblocks/widget:update widget)
+
+  (let ((document (document widget)))
+    (destructuring-bind (node caret-position)
+        (reblocks-text-editor/document/editable::caret-position document)
+      (reblocks-text-editor/document/ops::ensure-cursor-position-is-correct
+       document node caret-position))))
 
 
 (defgeneric on-shortcut (widget key-code node cursor-position)
@@ -227,6 +233,7 @@ Second Line.
                  ;; first paragraph.
                  (when next-paragraphs
                    (reblocks-text-editor/document/ops::ensure-cursor-position-is-correct
+                    document
                     (first next-paragraphs)
                     0)))))))
         ((string= change-type
