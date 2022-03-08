@@ -11,6 +11,7 @@
   (:import-from #:reblocks-text-editor/html/document-link)
   (:import-from #:reblocks-text-editor/frontend/js)
   (:import-from #:reblocks-text-editor/frontend/css)
+  (:import-from #:reblocks-text-editor/document/copying)
   (:import-from #:reblocks-text-editor/document/editable)
   (:import-from #:reblocks-text-editor/document/ops
                 #:map-document)
@@ -29,6 +30,8 @@
                 #:retrieve-url-title)
   (:import-from #:serapeum
                 #:slice)
+  (:import-from #:metacopy
+                #:copy-thing)
   (:local-nicknames (#:ops #:reblocks-text-editor/document/ops))
   (:export
    #:on-document-update))
@@ -148,7 +151,17 @@ Second Line.
 (defgeneric on-document-update (widget)
   (:documentation "Called after the each document update.")
   (:method ((widget editor))
+    (reblocks-text-editor/document/editable::history-push (document widget))
     (values)))
+
+
+(defun process-undo (widget &rest args)
+  (declare (ignore args))
+  (log:debug "Processing UNDO")
+  (setf (document widget)
+        (reblocks-text-editor/document/editable::history-pop
+         (document widget)))
+  (reblocks/widget:update widget))
 
 
 (defgeneric on-shortcut (widget key-code node cursor-position)
@@ -168,6 +181,8 @@ Second Line.
              (apply #'process-update widget args))
             ((string-equal message-type "shortcut")
              (apply #'process-shortcut widget args))
+            ((string-equal message-type "undo")
+             (apply #'process-undo widget args))
             ((string-equal message-type "link")
              (apply #'process-link widget args))))))))
 

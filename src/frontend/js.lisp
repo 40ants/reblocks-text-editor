@@ -209,6 +209,15 @@
                                (create :args args))
               (values t)))))
       
+      (defun process-undo (event)
+        (let* ((current-version
+                 (incf (@ event target dataset version)))
+               (args (create :type "undo"
+                             :version current-version)))
+          (initiate-action (@ event target dataset action-code)
+                           (create :args args))
+          (values t)))
+      
       (defun paste-text (event text)
         (let* ((content-node (get-editor-content-node
                               (@ event target)))
@@ -397,7 +406,7 @@
           (unless (or (= caret
                          0)
                       (= caret
-                      current-node-length))
+                         current-node-length))
             (loop for idx from (1- (length path)) downto 0
                   for id = (aref path idx)
                   for node = (chain document
@@ -464,11 +473,20 @@
            (change-text event "move-cursor-down")
            (chain event
                   (prevent-default)))
+          
           ((= (@ event key-code)
               ,shortcut)
            (when (process-shortcut event)
              (chain event
                     (prevent-default))))
+
+          ;; Cmd-Z
+          ((and (= (@ event key-code)
+                   90)
+                (@ event meta-key))
+           (process-undo event)
+           (chain event
+                  (prevent-default)))
           (t
            (update-active-paragraph))))
 
