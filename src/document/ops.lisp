@@ -873,3 +873,28 @@
           (ensure-cursor-position-is-correct document
                                              current-node
                                              cursor-position))))))
+
+
+(defun add-missing-paragraphs (document)
+  "Adds PARAGRAPH nodes to each LIST-ITEM which does not contain paragraphs.
+
+   This usually happens when a LIST-ITEM with a single paragraph is saved to file."
+  (flet ((add-paragraph-if-needed (current-node depth)
+           (declare (ignore depth))
+           (cond
+             ((typep current-node 'common-doc:list-item)
+              (let ((children (common-doc:children current-node)))
+                (cond
+                  ((and children
+                        (not
+                         (typep (first children)
+                                'common-doc:paragraph)))
+                   (common-doc:make-list-item
+                    (common-doc:make-paragraph
+                     children)
+                    :metadata (common-doc:metadata current-node)
+                    :reference (common-doc:reference current-node)))
+                  (t current-node))))
+             (t
+              current-node))))
+    (map-document document #'add-paragraph-if-needed)))

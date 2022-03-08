@@ -14,6 +14,9 @@
              :accessor content-version)
    (next-id :initform 1
             :accessor next-id)
+   (title :initform "Untitled"
+          :initarg :title
+          :accessor common-doc:title)
    (undo-history :type list
                  :initform nil
                  :documentation "Simplest form of undo, using a document stack."

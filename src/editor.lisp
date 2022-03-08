@@ -82,7 +82,7 @@ Second Line.
             document paragraph plain-text cursor-position)
 
          (reblocks-text-editor/document/ops::ensure-cursor-position-is-correct
-          current-node cursor-position)))
+          document current-node cursor-position)))
       (t
        (log:warn "Cant find paragraph at" path)))))
 

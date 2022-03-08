@@ -11,6 +11,7 @@
   :copy (common-doc::children
          common-doc::metadata
          common-doc::reference
+         reblocks-text-editor/document/editable::title
          reblocks-text-editor/document/editable::caret-position
          reblocks-text-editor/document/editable::next-id
          reblocks-text-editor/document/editable::revision))
