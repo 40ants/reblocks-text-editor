@@ -91,6 +91,14 @@
                             (common-doc:text node))))))
 
 
+(defmethod to-html ((node common-doc:image))
+  (reblocks/html:with-html
+    (:img :id (common-doc:reference node)
+          :class (html-class node)
+          :src (common-doc:source node)
+          :title (common-doc:description node))))
+
+
 (defmethod to-html ((node commondoc-markdown/raw-html:raw-inline-html))
   (reblocks/html:with-html
     (:raw (commondoc-markdown/raw-html:html node))))
