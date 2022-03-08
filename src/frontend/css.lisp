@@ -16,5 +16,9 @@
          :padding-left 1.2rem))
        (.bold :font-weight bold)
        (.markup :display none)
+       (code
+        :border inherit
+        :background-color inherit
+        :padding 0)
        ((:and p .active)
         (.markup :display inline-block))))))

@@ -90,6 +90,13 @@
            (mapc #'to-html (uiop:ensure-list
                             (common-doc:text node))))))
 
+(defmethod to-html ((node common-doc:code))
+  (reblocks/html:with-html
+    (:code :id (common-doc:reference node)
+           :class (html-class node)
+           (mapc #'to-html (uiop:ensure-list
+                            (common-doc:children node))))))
+
 
 (defmethod to-html ((node common-doc:image))
   (reblocks/html:with-html
@@ -137,5 +144,12 @@
       (append (list (make-markup2 node "**" "left"))
               (call-next-method)
               (list (make-markup2 node "**" "right")))
+      (call-next-method)))
+
+(defmethod common-doc:children :around ((node common-doc:code))
+  (if *render-markup*
+      (append (list (make-markup2 node "`" "left"))
+              (call-next-method)
+              (list (make-markup2 node "`" "right")))
       (call-next-method)))
 
