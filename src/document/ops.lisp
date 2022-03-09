@@ -595,8 +595,9 @@
 (defun add-reference-ids (document &key (to-node document))
   (flet ((set-reference-id (node depth)
            (declare (ignore depth))
-           (setf (common-doc:reference node)
-                 (get-next-reference-id document))
+           (unless (common-doc:reference node)
+             (setf (common-doc:reference node)
+                   (get-next-reference-id document)))
            (values)))
     (common-doc.ops:traverse-document to-node
                                       #'set-reference-id)
