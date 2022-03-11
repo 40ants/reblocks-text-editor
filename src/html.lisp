@@ -124,6 +124,13 @@
         (mapc #'to-html (common-doc:children node)))))
 
 
+(defmethod to-html ((node common-doc:strikethrough))
+  (reblocks/html:with-html
+    (:s :id (common-doc:reference node)
+        :class (html-class node)
+        (mapc #'to-html (common-doc:children node)))))
+
+
 (defmethod to-html ((node string))
   (reblocks/html:with-html
     (:raw (plump:encode-entities node))))
@@ -151,5 +158,12 @@
       (append (list (make-markup2 node "`" "left"))
               (call-next-method)
               (list (make-markup2 node "`" "right")))
+      (call-next-method)))
+
+(defmethod common-doc:children :around ((node common-doc:strikethrough))
+  (if *render-markup*
+      (append (list (make-markup2 node "--" "left"))
+              (call-next-method)
+              (list (make-markup2 node "--" "right")))
       (call-next-method)))
 
