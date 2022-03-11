@@ -327,6 +327,6 @@ Second Line.
 
 (defmethod reblocks/dependencies:get-dependencies ((widget editor))
   ;; https://keycode.info/
-  (list* (reblocks-text-editor/frontend/js::make-js-code 191)
+  (list* (reblocks-text-editor/frontend/js::make-js-code "/")
          (reblocks-text-editor/frontend/css::make-css-code)
          (call-next-method)))

@@ -474,7 +474,7 @@
            (chain event
                   (prevent-default)))
           
-          ((= (@ event key-code)
+          ((= (@ event key)
               ,shortcut)
            (when (process-shortcut event)
              (chain event
