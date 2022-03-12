@@ -97,6 +97,15 @@
            (mapc #'to-html (uiop:ensure-list
                             (common-doc:children node))))))
 
+(defmethod to-html ((node common-doc:code-block))
+  (let ((class (format nil "~@[~A ~]code-block"
+                       (html-class node))))
+    (reblocks/html:with-html
+      (:pre :id (common-doc:reference node)
+            :class class
+            (:code (mapc #'to-html (uiop:ensure-list
+                                    (common-doc:children node))))))))
+
 
 (defmethod to-html ((node common-doc:image))
   (reblocks/html:with-html

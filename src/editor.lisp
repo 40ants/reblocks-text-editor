@@ -42,8 +42,11 @@
   (let* ((content (reblocks-text-editor/utils/markdown::from-markdown "
 Hello **Lisp** World!
 
-Second Line.
+```
+Block of code
 
+Second line
+```
 "))
          (doc (make-instance 'reblocks-text-editor/document/editable::editable-document
                              :children (list content))))
