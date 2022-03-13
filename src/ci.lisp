@@ -10,11 +10,13 @@
 
 (defworkflow linter
   :on-pull-request t
+  :cache t
   :jobs ((40ants-ci/jobs/linter:linter)))
 
 
 (defworkflow critic
   :on-pull-request t
+  :cache t
   :jobs ((40ants-ci/jobs/critic:critic)))
 
 
@@ -22,5 +24,6 @@
   :on-push-to "master"
   :by-cron "0 10 * * 1"
   :on-pull-request t
+  :cache t
   :jobs ((40ants-ci/jobs/run-tests:run-tests
           :coverage t)))
