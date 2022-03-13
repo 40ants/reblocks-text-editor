@@ -755,6 +755,29 @@
        (values node cursor-position)))))
 
 
+(defmethod update-node-content ((document reblocks-text-editor/document/editable::editable-document)
+                                (node common-doc:code-block)
+                                (new-content string)
+                                cursor-position)
+  ;; Here we are updating our document tree
+  (log:debug "Updating code block's content"
+             node
+             new-content
+             cursor-position)
+  (let ((children (common-doc:children node)))
+    (unless (length= 1 children)
+      (error "This code block has more than 1 child: ~A"
+             node))
+    (unless (typep (first children)
+                   'common-doc:text-node)
+      (error "Code block should have a TEXT-NODE as it's child, but it is: ~A"
+             (first children)))
+    
+    (setf (common-doc:text (first children))
+          new-content)
+    (values node cursor-position)))
+
+
 
 (defun ensure-cursor-position-is-correct (document changed-node caret-position &key from-the-end)
   ;; We need to move cursor because in HTML cursor

@@ -96,12 +96,12 @@ Second line
     (cond
       (paragraph
        (log:error "Updating paragraph at" path)
-       (multiple-value-bind (current-node cursor-position)
+       (multiple-value-bind (current-node new-cursor-position)
            (reblocks-text-editor/document/ops::update-node-content
             document paragraph plain-text cursor-position)
 
          (reblocks-text-editor/document/ops::ensure-cursor-position-is-correct
-          document current-node cursor-position)))
+          document current-node new-cursor-position)))
       (t
        (log:warn "Cant find paragraph at" path)))))
 
@@ -218,6 +218,8 @@ Second line
 
 (defgeneric process-update (widget &key change-type new-html path cursor-position pasted-text &allow-other-keys)
   (:method (widget &key change-type new-html path cursor-position pasted-text &allow-other-keys)
+    (check-type cursor-position integer)
+    
     (let ((document (document widget)))
       (log:error "Processing" new-html path cursor-position change-type)
     

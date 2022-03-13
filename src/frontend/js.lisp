@@ -248,6 +248,16 @@
               when (= (@ node tag-name)
                       tag-name)
                 do (return node)))
+
+      (defun go-up-to-block-node (starting-node)
+        (loop for node = starting-node
+                then (@ node parent-node)
+              while (not (null node))
+              when (let ((classes (@ node class-list)))
+                     (and classes
+                          (chain classes
+                                 (contains "block"))))
+                do (return node)))
       
       (defun get-editor-node (starting-node)
         (loop for node = starting-node
@@ -289,7 +299,7 @@
                         base-node))
                (paragraph (if inside-current-node
                               node
-                              (go-up-to "P" node))))
+                              (go-up-to-block-node node))))
           ;; If there is no any range, then we can't
           ;; determine a cursor position:
           (when (and paragraph

@@ -185,8 +185,41 @@ Third paragraph."))
                           new-content
                           0)
 
-    ;; After this action, we should have only one
-    ;; child in the document
+    (ok (length= 3 (children doc)))
+    ;; and it should be a list of two items
+    ;; where second item has two paragraphs
+    (ok (equal (to-markdown
+                doc)
+               expected))))
+
+
+(deftest test-replacing-code-block-content
+  (let* ((doc (make-document-from-markdown-string "
+First paragraph.
+
+```
+Some code
+```
+
+Third paragraph."))
+         (code-node (second (children doc)))
+         (new-content "New code")
+         ;; TODO: Seems here another error
+         ;; in markdown serializer and
+         ;; there should be an empty line
+         ;; before the "Third paragraph"?
+         (expected "First paragraph.
+
+```
+New code
+```
+Third paragraph."))
+
+    (update-node-content  doc
+                          code-node
+                          new-content
+                          0)
+
     (ok (length= 3 (children doc)))
     ;; and it should be a list of two items
     ;; where second item has two paragraphs
