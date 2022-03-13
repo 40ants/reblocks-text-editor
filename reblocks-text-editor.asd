@@ -9,4 +9,4 @@
   :in-order-to ((test-op (test-op "reblocks-text-editor-tests"))))
 
 
-(register-system-packages "common-doc" '("COMMON-DOC.format"))
+(register-system-packages "common-doc" '("COMMON-DOC.FORMAT"))
