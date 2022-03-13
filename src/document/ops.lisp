@@ -2,6 +2,7 @@
   (:use #:cl)
   (:import-from #:common-doc
                 #:children)
+  (:import-from #:scriba)
   (:import-from #:reblocks-text-editor/utils/markdown
                 #:to-markdown)
   (:import-from #:reblocks-text-editor/utils/text)
