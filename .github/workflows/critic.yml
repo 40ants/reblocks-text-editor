@@ -72,7 +72,7 @@
         },
         {
           "name": "Run Critic for \"reblocks-text-editor\" system",
-          "run": "qlot exec lisp-critic reblocks-text-editor",
+          "run": "qlot exec lisp-critic --ignore function-too-long reblocks-text-editor",
           "shell": "bash"
         }
       ]

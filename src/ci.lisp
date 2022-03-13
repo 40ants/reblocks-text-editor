@@ -19,7 +19,8 @@
   :on-push-to "master"
   :on-pull-request t
   :cache t
-  :jobs ((40ants-ci/jobs/critic:critic)))
+  :jobs ((40ants-ci/jobs/critic:critic
+          :ignore-criticues  ("function-too-long"))))
 
 
 (defworkflow tests
