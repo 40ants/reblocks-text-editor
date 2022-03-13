@@ -75,11 +75,13 @@
   (mapc #'to-html nodes)
   (values))
 
-;; (defmethod to-html ((node common-doc:paragraph))
-;;   (reblocks/html:with-html
-;;     ;; TODO: add a check that there is no nodes prohibited as a P container's content
-;;     (:p :id (common-doc:reference node)
-;;         (mapc #'to-html (common-doc:children node)))))
+(defmethod to-html ((node common-doc:paragraph))
+  (let ((class (format nil "~@[~A ~]block"
+                       (html-class node))))
+    (reblocks/html:with-html
+      (:p :id (common-doc:reference node)
+          :class class
+          (mapc #'to-html (common-doc:children node))))))
 
 
 (defmethod to-html ((node common-doc:text-node))
@@ -98,7 +100,7 @@
                             (common-doc:children node))))))
 
 (defmethod to-html ((node common-doc:code-block))
-  (let ((class (format nil "~@[~A ~]code-block"
+  (let ((class (format nil "~@[~A ~]code-block block"
                        (html-class node))))
     (reblocks/html:with-html
       (:pre :id (common-doc:reference node)

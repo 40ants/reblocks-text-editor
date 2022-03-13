@@ -2,6 +2,7 @@
   (:use #:cl)
   (:import-from #:commondoc-markdown)
   (:import-from #:common-doc)
+  (:import-from #:scriba.emitter)
   (:import-from #:reblocks-text-editor/html
                 #:*render-markup*
                 #:html-class)

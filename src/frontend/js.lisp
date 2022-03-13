@@ -15,6 +15,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
+;; ignore-critiques: nested-defuns
 (defun make-js-code (shortcut)
   (reblocks-parenscript:make-dependency*
    `(progn
@@ -137,21 +138,23 @@
               for i from 1 to n
               collect item))
 
-      (defun trim-path-to-nearest-paragraph (path)
+      (defun trim-path-to-nearest-block (path)
         (loop for idx = (1- (@ path length))
-                then (- idx 1)
+                then (1- idx)
               for id = (aref path idx)
               for el = (chain document
                               (get-element-by-id id))
-              when (= (@ el tag-name)
-                      "P")
+              when (= (chain
+                       el
+                       class-list
+                       (contains "block")))
                 do (return (take (1+ idx) path))))
       
       (defun change-text (event change-type)
         (let ((current-version
                 (incf (@ event target dataset version))))
 
-          (let* ((path (trim-path-to-nearest-paragraph
+          (let* ((path (trim-path-to-nearest-block
                         (calculate-path)))
                  ;; (target (@ event target inner-h-t-m-l))
                  (edited-node-id (@ path
@@ -178,7 +181,7 @@
                              (create :args args)))))
       
       (defun process-shortcut (event)
-        (let* ((path (trim-path-to-nearest-paragraph
+        (let* ((path (trim-path-to-nearest-block
                       (calculate-path)))
                (paragraph-id (elt path
                                   (1- (@ path length))))
@@ -223,7 +226,7 @@
                               (@ event target)))
                (current-version
                  (incf (@ content-node dataset version)))
-               (path (trim-path-to-nearest-paragraph
+               (path (trim-path-to-nearest-block
                       (calculate-path)))
                (cursor-position (caret-position))
                (args (create
@@ -374,7 +377,7 @@
                (current-version
                  (incf (@ content dataset version))))
 
-          (let* ((path (trim-path-to-nearest-paragraph
+          (let* ((path (trim-path-to-nearest-block
                         (calculate-path)))
                  (cursor-position (caret-position))
                  (args (create
@@ -462,14 +465,14 @@
                   (prevent-default)))
           
           ;; Up&Down without modifiers
-          ((and (= (@ event key)
-                   "ArrowUp"))
+          ((= (@ event key)
+              "ArrowUp")
            (change-text event "move-cursor-up")
            (chain event
                   (prevent-default)))
           
-          ((and (= (@ event key)
-                   "ArrowDown"))
+          ((= (@ event key)
+              "ArrowDown")
            (change-text event "move-cursor-down")
            (chain event
                   (prevent-default)))
@@ -494,8 +497,8 @@
       (defun on-paste (event)
         (chain console
                (log "on-paste event" event))
-        (let* ((pasted-text (chain (@ event clipboard-data)
-                                   (get-data "text"))))
+        (let ((pasted-text (chain (@ event clipboard-data)
+                                  (get-data "text"))))
           (paste-text event pasted-text)
           (chain event
                  (prevent-default))))

@@ -1,5 +1,7 @@
 (uiop:define-package #:reblocks-text-editor/document/copying
-  (:use #:cl))
+  (:use #:cl)
+  (:import-from #:reblocks-text-editor/document/editable)
+  (:import-from #:metacopy))
 (in-package #:reblocks-text-editor/document/copying)
 
 

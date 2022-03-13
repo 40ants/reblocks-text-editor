@@ -10,3 +10,4 @@
 
 
 (register-system-packages "common-doc" '("COMMON-DOC.FORMAT"))
+(register-system-packages "scriba" '("SCRIBA.EMITTER"))

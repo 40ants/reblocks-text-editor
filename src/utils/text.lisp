@@ -15,8 +15,8 @@
 
 
 (defun remove-html-tags (html-string)
-  (let* ((result (cl-ppcre:regex-replace-all "<[^>]+>" html-string
-                                             "")))
+  (let ((result (cl-ppcre:regex-replace-all "<[^>]+>" html-string
+                                            "")))
     (plump:decode-entities
      (if (string= result +zero-width-space+)
          result

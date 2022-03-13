@@ -24,6 +24,7 @@
     common-doc:base-list))
 
 
+;; ignore-critiques: optionals
 (defun %map-node-with-children (cnode function &optional (depth 0) make-bindings)
   (let ((possibly-new-node (funcall function cnode depth)))
     (when (eql possibly-new-node cnode)
@@ -108,53 +109,56 @@
     (map-document document #'do-replace)))
 
 
-(defun find-node-at-position (node cursor-position &aux
-                                                     last-visited-node
-                                                     last-visited-node-content-length)
-  (labels ((recursive-find (node)
-             (setf last-visited-node
-                   node)
-             
-             (etypecase node
-               ((or common-doc:text-node
-                    commondoc-markdown/raw-html:raw-inline-html)
-                (let* ((text (typecase node
-                               (commondoc-markdown/raw-html:raw-inline-html
-                                (commondoc-markdown/raw-html:html node))
-                               (common-doc:text-node
-                                (common-doc:text node))))
-                       (content-length
-                         (length text)))
-                  (setf last-visited-node-content-length
-                        content-length)
-                  
-                  (if (<= cursor-position
+(defun find-node-at-position (node cursor-position)
+  (let ((last-visited-node nil)
+        (last-visited-node-content-length nil)
+        (current-cursor-position cursor-position))
+    (labels ((recursive-find (node)
+               (setf last-visited-node
+                     node)
+              
+               (etypecase node
+                 ((or common-doc:text-node
+                      commondoc-markdown/raw-html:raw-inline-html)
+                  (let* ((text (typecase node
+                                 (commondoc-markdown/raw-html:raw-inline-html
+                                  (commondoc-markdown/raw-html:html node))
+                                 (common-doc:text-node
+                                  (common-doc:text node))))
+                         (content-length
+                           (length text)))
+                    (setf last-visited-node-content-length
                           content-length)
-                      (return-from find-node-at-position
-                        (values node
-                                cursor-position))
-                      (decf cursor-position
-                            content-length))))
-               (node-with-children
-                ;; We need this render-markup flag to
-                ;; place cursor propertly after any
-                ;; markup elements:
-                (let ((reblocks-text-editor/html::*render-markup* t))
-                  (cond
-                    ((children node)
-                     (mapc #'recursive-find
-                           (children node)))
+                   
+                    (if (<= current-cursor-position
+                            content-length)
+                        (return-from find-node-at-position
+                          (values node
+                                  current-cursor-position))
+                        (decf current-cursor-position
+                              content-length))))
+                 (node-with-children
+                  ;; We need this render-markup flag to
+                  ;; place cursor propertly after any
+                  ;; markup elements:
+                  (let ((reblocks-text-editor/html::*render-markup* t))
+                    (cond
+                      ((children node)
+                       (mapc #'recursive-find
+                             (children node)))
 
-                    ;; The case, when cursor points to the empty
-                    ;; node, like a new paragraph with no content:
-                    ((zerop cursor-position)
-                     (return-from find-node-at-position
-                       (values node
-                               cursor-position)))))))))
-    
-    (recursive-find node)
-    (values last-visited-node
-            last-visited-node-content-length)))
+                      ;; The case, when cursor points to the empty
+                      ;; node, like a new paragraph with no content:
+                      ((zerop current-cursor-position)
+                       (return-from find-node-at-position
+                         (values node
+                                 current-cursor-position)))
+                      (t
+                       (error "Probably we should't get here."))))))))
+     
+      (recursive-find node)
+      (values last-visited-node
+              last-visited-node-content-length))))
 
 
 (defun select-outer-node-of-type (root-node node searched-type)
@@ -261,9 +265,9 @@
                 ;; branch of the COND.
                 (or
                  (null current-list-item)
-                 (equal current-list-item
-                        (select-outer-list-item document
-                                                previous-paragraph))))
+                 (eql current-list-item
+                      (select-outer-list-item document
+                                              previous-paragraph))))
            (log:error "Joining with the previous paragraph" previous-paragraph)
            (check-type previous-paragraph common-doc:paragraph)
            
@@ -321,8 +325,7 @@
 (defun is-last-child-p (container node)
   (check-type container node-with-children)
   (check-type node common-doc:document-node)
-  (= (length (member node (children container)))
-     1))
+  (length= 1 (member node (children container))))
 
 
 (defun split-paragraph (document path new-html cursor-position &key dont-escape-from-list-item)
@@ -449,14 +452,16 @@
   (let ((previous-paragraph nil))
     (flet ((search-node (current-node depth)
              (declare (ignore depth))
-             (cond
-               ((eql current-node node)
-                (return-from find-previous-paragraph
-                  previous-paragraph))
-               ;; remember
-               ((typep current-node 'common-doc:paragraph)
-                (setf previous-paragraph
-                      current-node)))
+             
+             (when (eql current-node node)
+               (return-from find-previous-paragraph
+                 previous-paragraph))
+             
+             ;; remember
+             (when (typep current-node 'common-doc:paragraph)
+               (setf previous-paragraph
+                     current-node))
+             
              (values current-node)))
       (map-document document #'search-node))
     (values)))
@@ -467,16 +472,18 @@
   (let ((node-found nil))
     (flet ((search-node (current-node depth)
              (declare (ignore depth))
-             (cond
-               ;; Remember we found the given NODE:
-               ((eql current-node node)
-                (setf node-found t))
-               ;; This block will work only after we found
-               ;; given NODE:
-               ((and node-found
-                     (typep current-node 'common-doc:paragraph))
-                (return-from find-next-paragraph
-                  current-node)))
+             ;; Remember we found the given NODE:
+
+             (when (eql current-node node)
+               (setf node-found t))
+             
+             ;; This block will work only after we found
+             ;; given NODE:
+             (when (and node-found
+                        (typep current-node 'common-doc:paragraph))
+               (return-from find-next-paragraph
+                 current-node))
+             
              (values current-node)))
       (map-document document #'search-node))
     (values)))
@@ -557,6 +564,7 @@
   (values))
 
 
+;; ignore-critiques: nth-on-list
 (defun find-previous-sibling (document node)
   (flet ((find-node (current-node depth)
            (declare (ignore depth))
@@ -574,6 +582,7 @@
     (values)))
 
 
+;; ignore-critiques: nth-on-list
 (defun find-next-sibling (document node)
   (flet ((find-node (current-node depth)
            (declare (ignore depth))
