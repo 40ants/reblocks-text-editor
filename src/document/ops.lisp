@@ -111,7 +111,8 @@
 
 (defun find-node-at-position (node cursor-position)
   (let ((last-visited-node nil)
-        (last-visited-node-content-length nil))
+        (last-visited-node-content-length nil)
+        (current-cursor-position cursor-position))
     (labels ((recursive-find (node)
                (setf last-visited-node
                      node)
@@ -129,12 +130,12 @@
                     (setf last-visited-node-content-length
                           content-length)
                    
-                    (if (<= cursor-position
+                    (if (<= current-cursor-position
                             content-length)
                         (return-from find-node-at-position
                           (values node
-                                  cursor-position))
-                        (decf cursor-position
+                                  current-cursor-position))
+                        (decf current-cursor-position
                               content-length))))
                  (node-with-children
                   ;; We need this render-markup flag to
@@ -148,10 +149,10 @@
 
                       ;; The case, when cursor points to the empty
                       ;; node, like a new paragraph with no content:
-                      ((zerop cursor-position)
+                      ((zerop current-cursor-position)
                        (return-from find-node-at-position
                          (values node
-                                 cursor-position)))
+                                 current-cursor-position)))
                       (t
                        (error "Probably we should't get here."))))))))
      
