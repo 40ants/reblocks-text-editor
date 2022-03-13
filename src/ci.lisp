@@ -9,12 +9,14 @@
 
 
 (defworkflow linter
+  :on-push-to "master"
   :on-pull-request t
   :cache t
   :jobs ((40ants-ci/jobs/linter:linter)))
 
 
 (defworkflow critic
+  :on-push-to "master"
   :on-pull-request t
   :cache t
   :jobs ((40ants-ci/jobs/critic:critic)))
