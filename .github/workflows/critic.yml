@@ -1,6 +1,11 @@
 {
   "name": "CRITIC",
   "on": {
+    "push": {
+      "branches": [
+        "master"
+      ]
+    },
     "pull_request": null
   },
   "jobs": {
