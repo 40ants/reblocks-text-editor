@@ -674,6 +674,8 @@
   (:documentation "Deletes a node from container"))
 
 
+;; TODO: decide what to do with replace-node-content function
+;; because now it is easy to misuse these two functions
 (defgeneric update-node-content (document node new-content cursor-position)
   (:documentation "Updates content of the given node. Sometimes the node can be replaced with other nodes."))
 
