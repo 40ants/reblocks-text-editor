@@ -98,26 +98,3 @@ Second paragraph."))
                 (second (children doc)))
                "Second paragraph."))))
 
-
-(deftest test-replacing-paragraph-content-with-another-paragraph
-  (let* ((doc (make-document-from-markdown-string "
-First paragraph.
-
-Second paragraph."))
-         (first-paragraph (first (children doc)))
-         (new-content (make-paragraph
-                       (list (make-text "Foo ")
-                             (common-doc:make-bold (make-text "Bar"))
-                             (make-text " Baz")))))
-
-    (update-node-content  doc first-paragraph
-                          new-content
-                          0)
-    
-    (ok (length= 2 (children doc)))
-    (ok (equal (to-markdown
-                (first (children doc)))
-               "Foo **Bar** Baz"))
-    (ok (equal (to-markdown
-                (second (children doc)))
-               "Second paragraph."))))
