@@ -270,7 +270,7 @@
                   (full-text (concatenate 'string
                                           first-part
                                           text-to-append)))
-             (update-paragraph-content document previous-paragraph full-text cursor-position)
+             (update-node-content document previous-paragraph full-text cursor-position)
              (delete-node document
                           paragraph-to-delete)
              (ensure-cursor-position-is-correct document
@@ -359,7 +359,7 @@
                                                 changed-paragraph
                                                 0)))
           (t
-           (update-paragraph-content document changed-paragraph text-before-cursor cursor-position)
+           (update-node-content document changed-paragraph text-before-cursor cursor-position)
            (insert-node document
                         new-paragraph
                         :relative-to changed-paragraph)
@@ -402,7 +402,7 @@
              ;; character to the right.
              (new-nodes (remove-if #'empty-text-node new-nodes)))
 
-        (update-paragraph-content document changed-paragraph new-nodes cursor-position)
+        (update-node-content document changed-paragraph new-nodes cursor-position)
         (place-cursor-after-the document node)))))
 
 
@@ -664,27 +664,34 @@
   (:documentation "Deletes a node from container"))
 
 
-(defun update-paragraph-content (document paragraph new-content cursor-position)
+(defgeneric update-node-content (document node new-content cursor-position)
+  (:documentation "Updates content of the given node. Sometimes the node can be replaced with other nodes."))
+
+
+(defmethod update-node-content ((document reblocks-text-editor/document/editable::editable-document)
+                                (node common-doc::paragraph)
+                                new-content
+                                cursor-position)
   ;; Here we are updating our document tree
-  (log:debug "Updating paragraph content"
-             paragraph
+  (log:debug "Updating node content"
+             node
              new-content
              cursor-position)
   (let* (;; (new-content (prepare-new-content document plain-text))
-         (previous-node (find-previous-sibling document paragraph))
-         (next-node (find-next-sibling document paragraph)))
+         (previous-node (find-previous-sibling document node))
+         (next-node (find-next-sibling document node)))
 
     (etypecase new-content
       (string
-       (update-paragraph-content document paragraph
-                                 (prepare-new-content document new-content)
-                                 cursor-position))
+       (update-node-content document node
+                            (prepare-new-content document new-content)
+                            cursor-position))
       ;; A new list item was created by manual enter of the "* "
-      ;; at the beginning of the paragraph:
+      ;; at the beginning of the node:
       (common-doc:unordered-list
        (let ((list-node new-content))
          (cond
-           ;; If user enters "* " in a beginning of the paragraph,
+           ;; If user enters "* " in a beginning of the node,
            ;; following a list, we should attach this new list item
            ;; to the existing list instead of creating a new one and inserting
            ;; it into the document
@@ -694,7 +701,7 @@
               (insert-node document new-children
                            :relative-to previous-node
                            :position :as-last-child)
-              (delete-node document paragraph)
+              (delete-node document node)
               (values (first new-children)
                       0)))
            ;; The opposite situation, when we've created a list
@@ -705,35 +712,35 @@
               (insert-node document new-children
                            :relative-to next-node
                            :position :as-first-child)
-              (delete-node document paragraph)
+              (delete-node document node)
               (values (first new-children)
                       0)))
            ;; Just insert a new list into the document
            (t
             (replace-node document
-                          paragraph
+                          node
                           list-node)
 
             (dom::insert-node document
                               list-node
-                              :relative-to paragraph)
-            (dom::delete-node document paragraph)
+                              :relative-to node)
+            (dom::delete-node document node)
             (values list-node
                     (decf cursor-position 2))))))
       ;; Otherwise, we just insert
-      ;; node's content into existing paragraph:
+      ;; node's content into existing node:
       (common-doc:paragraph
-       (update-paragraph-content document paragraph
-                                 (common-doc:children
-                                  new-content)
-                                 cursor-position))
+       (update-node-content document node
+                            (common-doc:children
+                             new-content)
+                            cursor-position))
       (list
        (replace-node-content document
-                             paragraph
+                             node
                              new-content)
 
-       (dom::update-node document paragraph)
-       (values paragraph cursor-position)))))
+       (dom::update-node document node)
+       (values node cursor-position)))))
 
 
 

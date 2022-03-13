@@ -33,13 +33,33 @@
   (:import-from #:metacopy
                 #:copy-thing)
   (:local-nicknames (#:ops #:reblocks-text-editor/document/ops))
-  (:export
-   #:on-document-update))
+  (:export #:on-document-update))
 (in-package #:reblocks-text-editor/editor)
 
 
+(defun unwrap-content (node)
+  "Returns a list of common doc node. If NODE is a common-doc:content-node,
+   then it's children are returned wheren unwrap-content is applied to each
+   of them recursively."
+  (cond
+    ((eql (type-of node)
+          'common-doc:content-node)
+     (loop for child in (common-doc:children node)
+           append (unwrap-content child)))
+    (t
+     (list node))))
+
+
+(defun make-document-from-markdown-string (string)
+  (let* ((content (reblocks-text-editor/utils/markdown::from-markdown string))
+         (doc (make-instance 'reblocks-text-editor/document/editable::editable-document
+                             :children (unwrap-content content))))
+    
+    (reblocks-text-editor/document/ops::add-reference-ids doc)))
+
+
 (defun make-initial-document ()
-  (let* ((content (reblocks-text-editor/utils/markdown::from-markdown "
+  (make-document-from-markdown-string "
 Hello **Lisp** World!
 
 ```
@@ -48,10 +68,6 @@ Block of code
 Second line
 ```
 "))
-         (doc (make-instance 'reblocks-text-editor/document/editable::editable-document
-                             :children (list content))))
-    
-    (reblocks-text-editor/document/ops::add-reference-ids doc)))
 
 
 (reblocks/widget:defwidget editor ()
@@ -81,7 +97,7 @@ Second line
       (paragraph
        (log:error "Updating paragraph at" path)
        (multiple-value-bind (current-node cursor-position)
-           (reblocks-text-editor/document/ops::update-paragraph-content
+           (reblocks-text-editor/document/ops::update-node-content
             document paragraph plain-text cursor-position)
 
          (reblocks-text-editor/document/ops::ensure-cursor-position-is-correct

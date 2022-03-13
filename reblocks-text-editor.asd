@@ -5,4 +5,5 @@
 (defsystem "reblocks-text-editor"
   :class :package-inferred-system
   :pathname "src"
-  :depends-on ("reblocks-text-editor/editor"))
+  :depends-on ("reblocks-text-editor/editor")
+  :in-order-to ((test-op (test-op "reblocks-text-editor-tests"))))

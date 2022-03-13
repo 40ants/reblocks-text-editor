@@ -1,0 +1,47 @@
+{
+  "name": "TESTS",
+  "on": {
+    "push": {
+      "branches": [
+        "master"
+      ]
+    },
+    "pull_request": null,
+    "schedule": [
+      {
+        "cron": "0 10 * * 1"
+      }
+    ]
+  },
+  "jobs": {
+    "run-tests": {
+      "runs-on": "ubuntu-latest",
+      "env": {
+        "OS": "ubuntu-latest",
+        "QUICKLISP_DIST": "quicklisp",
+        "LISP": "sbcl-bin"
+      },
+      "steps": [
+        {
+          "name": "Checkout Code",
+          "uses": "actions/checkout@v2"
+        },
+        {
+          "name": "Setup Common Lisp Environment",
+          "uses": "40ants/setup-lisp@v2",
+          "with": {
+            "asdf-system": "reblocks-text-editor"
+          }
+        },
+        {
+          "name": "Run Tests",
+          "uses": "40ants/run-tests@v2",
+          "with": {
+            "asdf-system": "reblocks-text-editor",
+            "coveralls-token": "${{ secrets.github_token }}"
+          }
+        }
+      ]
+    }
+  }
+}
