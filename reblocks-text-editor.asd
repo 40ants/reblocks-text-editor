@@ -7,3 +7,6 @@
   :pathname "src"
   :depends-on ("reblocks-text-editor/editor")
   :in-order-to ((test-op (test-op "reblocks-text-editor-tests"))))
+
+
+(register-system-packages "common-doc" '("COMMON-DOC.format"))
