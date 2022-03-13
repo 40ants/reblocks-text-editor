@@ -15,6 +15,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
+;; ignore-criticues: nested-defuns
 (defun make-js-code (shortcut)
   (reblocks-parenscript:make-dependency*
    `(progn
@@ -139,7 +140,7 @@
 
       (defun trim-path-to-nearest-block (path)
         (loop for idx = (1- (@ path length))
-                then (- idx 1)
+                then (1- idx)
               for id = (aref path idx)
               for el = (chain document
                               (get-element-by-id id))
@@ -464,14 +465,14 @@
                   (prevent-default)))
           
           ;; Up&Down without modifiers
-          ((and (= (@ event key)
-                   "ArrowUp"))
+          ((= (@ event key)
+              "ArrowUp")
            (change-text event "move-cursor-up")
            (chain event
                   (prevent-default)))
           
-          ((and (= (@ event key)
-                   "ArrowDown"))
+          ((= (@ event key)
+              "ArrowDown")
            (change-text event "move-cursor-down")
            (chain event
                   (prevent-default)))
@@ -496,8 +497,8 @@
       (defun on-paste (event)
         (chain console
                (log "on-paste event" event))
-        (let* ((pasted-text (chain (@ event clipboard-data)
-                                   (get-data "text"))))
+        (let ((pasted-text (chain (@ event clipboard-data)
+                                  (get-data "text"))))
           (paste-text event pasted-text)
           (chain event
                  (prevent-default))))

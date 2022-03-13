@@ -148,7 +148,7 @@ Second line
        (common-doc:make-web-link
                       url
                       (list (common-doc:make-text title)))))
-    (:otherwise
+    (t
      (common-doc:make-text pasted-text))))
 
 
@@ -209,7 +209,11 @@ Second line
             ((string-equal message-type "undo")
              (apply #'process-undo widget args))
             ((string-equal message-type "link")
-             (apply #'process-link widget args))))))))
+             (apply #'process-link widget args))
+            (t
+             (log:error "Don't know how to process message of this type"
+                        message-type
+                        args))))))))
 
 
 (defgeneric process-update (widget &key change-type new-html path cursor-position pasted-text &allow-other-keys)
@@ -238,8 +242,8 @@ Second line
              (let ((next-paragraphs
                      (reblocks-text-editor/document/ops::select-siblings-next-to
                       list-item changed-paragraph)))
-               (mapcar (curry #'reblocks-text-editor/document/ops::delete-node document)
-                       next-paragraphs)
+               (mapc (curry #'reblocks-text-editor/document/ops::delete-node document)
+                     next-paragraphs)
              
                (let ((new-list-item
                        (common-doc:make-list-item next-paragraphs
