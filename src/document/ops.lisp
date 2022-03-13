@@ -24,7 +24,7 @@
     common-doc:base-list))
 
 
-;; ignore-criticues: optionals
+;; ignore-critiques: optionals
 (defun %map-node-with-children (cnode function &optional (depth 0) make-bindings)
   (let ((possibly-new-node (funcall function cnode depth)))
     (when (eql possibly-new-node cnode)
@@ -563,7 +563,7 @@
   (values))
 
 
-;; ignore-criticues: nth-on-list
+;; ignore-critiques: nth-on-list
 (defun find-previous-sibling (document node)
   (flet ((find-node (current-node depth)
            (declare (ignore depth))
@@ -581,7 +581,7 @@
     (values)))
 
 
-;; ignore-criticues: nth-on-list
+;; ignore-critiques: nth-on-list
 (defun find-next-sibling (document node)
   (flet ((find-node (current-node depth)
            (declare (ignore depth))

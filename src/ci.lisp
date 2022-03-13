@@ -20,7 +20,7 @@
   :on-pull-request t
   :cache t
   :jobs ((40ants-ci/jobs/critic:critic
-          :ignore-criticues  ("function-too-long"))))
+          :ignore-critiques  ("function-too-long"))))
 
 
 (defworkflow tests

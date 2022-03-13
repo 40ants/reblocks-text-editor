@@ -15,7 +15,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
-;; ignore-criticues: nested-defuns
+;; ignore-critiques: nested-defuns
 (defun make-js-code (shortcut)
   (reblocks-parenscript:make-dependency*
    `(progn
