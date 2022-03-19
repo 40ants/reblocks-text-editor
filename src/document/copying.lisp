@@ -55,4 +55,13 @@
 (defmethod metacopy:copy-one ((obj quri.uri.http:uri-http) copy-hash)
   (quri:copy-uri obj))
 
+(defmethod metacopy:copy-one ((obj quri.uri:uri) copy-hash)
+  (quri:copy-uri obj))
+
+(defmethod metacopy:copy-one ((obj quri.uri:urn) copy-hash)
+  (quri:copy-uri obj))
+
+(defmethod metacopy:copy-one ((obj quri.uri.file:uri-file) copy-hash)
+  (quri:copy-uri obj))
+
 
