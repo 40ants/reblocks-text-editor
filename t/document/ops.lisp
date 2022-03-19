@@ -14,6 +14,8 @@
   (:import-from #:alexandria
                 #:length=)
   (:import-from #:reblocks-text-editor/document/ops
+                #:find-previous-paragraph
+                #:find-next-paragraph
                 #:update-node-content)
   (:import-from #:reblocks-text-editor/utils/markdown
                 #:to-markdown))
@@ -227,3 +229,36 @@ Third paragraph."))
                 doc)
                expected))))
 
+
+(deftest test-find-prev-paragraph-1
+  (let* ((doc (make-document-from-markdown-string "
+First.
+
+Second.
+
+Third."))
+         (first (first (children doc)))
+         (second (second (children doc)))
+         (third (third (children doc))))
+    (ok (equal (to-markdown (find-previous-paragraph doc third))
+               (to-markdown second)))
+    (ok (equal (to-markdown (find-previous-paragraph doc second))
+               (to-markdown first)))
+    (ok (null (find-previous-paragraph doc first)))))
+
+
+(deftest test-find-next-paragraph-1
+  (let* ((doc (make-document-from-markdown-string "
+First.
+
+Second.
+
+Third."))
+         (first (first (children doc)))
+         (second (second (children doc)))
+         (third (third (children doc))))
+    (ok (equal (to-markdown (find-next-paragraph doc first))
+               (to-markdown second)))
+    (ok (equal (to-markdown (find-next-paragraph doc second))
+               (to-markdown third)))
+    (ok (null (find-next-paragraph doc third)))))

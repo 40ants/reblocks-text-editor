@@ -468,21 +468,20 @@
 
 
 (defun find-next-paragraph (document node)
-  "This function does opposite to FIND-PREV-PARAGRAPH."
+  "This function does opposite to FIND-PREVIOUS-PARAGRAPH."
   (let ((node-found nil))
     (flet ((search-node (current-node depth)
              (declare (ignore depth))
-             ;; Remember we found the given NODE:
-
-             (when (eql current-node node)
-               (setf node-found t))
-             
              ;; This block will work only after we found
              ;; given NODE:
              (when (and node-found
                         (typep current-node 'common-doc:paragraph))
                (return-from find-next-paragraph
                  current-node))
+
+             ;; Remember we found the given NODE:
+             (when (eql current-node node)
+               (setf node-found t))
              
              (values current-node)))
       (map-document document #'search-node))
