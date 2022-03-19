@@ -219,10 +219,13 @@ Second line
 (defgeneric process-update (widget &key change-type new-html path cursor-position pasted-text &allow-other-keys)
   (:method (widget &key change-type new-html path cursor-position pasted-text &allow-other-keys)
     (check-type cursor-position integer)
+
+    (log:debug "Processing" new-html path cursor-position change-type)
     
-    (let ((document (document widget)))
-      (log:error "Processing" new-html path cursor-position change-type)
-    
+    (let ((document (document widget))
+          ;; For some strange reason sometimes browser starts
+          ;; passing newlines even inside span elements. Why? Don't know.
+          (new-html (str:replace-all '(#\Newline) "" new-html)))
       (cond
         ;; This operation is similar to "split-paragraph"
         ;; but it splits a paragraph and created a new list
