@@ -154,7 +154,10 @@
                          (values node
                                  current-cursor-position)))
                       (t
-                       (error "Probably we should't get here."))))))))
+                       (error "Probably we should't get here.")))))
+                 (common-doc:image
+                  ;; Just skip it
+                  node))))
      
       (recursive-find node)
       (values last-visited-node
