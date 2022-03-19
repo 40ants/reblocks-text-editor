@@ -446,7 +446,8 @@
 
       (defun make-defaut-keymap ()
         (list
-         (create :predicate
+         (create :name "Alt-Enter"
+                 :predicate
                  (lambda (event)
                    (and (= (@ event key)
                            "Enter")
@@ -463,7 +464,8 @@
                        ;; Otherwise, it works as a usual Enter,
                        ;; adding a new paragraph:
                        (change-text event "split")))))
-         (create :predicate
+         (create :name "Alt-ArrowRight"
+                 :predicate
                  (lambda (event)
                    (and (= (@ event key)
                            "ArrowRight")
@@ -471,7 +473,8 @@
                  :func
                  (lambda (event)
                    (change-text event "indent")))
-         (create :predicate
+         (create :name "Alt-ArrowLeft"
+                 :predicate
                  (lambda (event)
                    (and (= (@ event key)
                            "ArrowLeft")
@@ -479,21 +482,24 @@
                  :func
                  (lambda (event)
                    (change-text event "dedent")))
-         (create :predicate
+         (create :name "ArrowUp"
+                 :predicate
                  (lambda (event)
                    (= (@ event key)
                       "ArrowUp"))
                  :func
                  (lambda (event)
                    (change-text event "move-cursor-up")))
-         (create :predicate
+         (create :name "ArrowDown"
+                 :predicate
                  (lambda (event)
                    (= (@ event key)
                       "ArrowDown"))
                  :func
                  (lambda (event)
                    (change-text event "move-cursor-down")))
-         (create :predicate
+         (create :name "/"
+                 :predicate
                  (lambda (event)
                    (= (@ event key)
                       ,shortcut))
@@ -503,7 +509,8 @@
                      (chain event
                             (prevent-default))))
                  :prevent-default nil)
-         (create :predicate
+         (create :name "Cmd-Z"
+                 :predicate
                  ;; Cmd-Z
                  (lambda (event)
                    (and (= (@ event key-code)
@@ -522,12 +529,15 @@
         (let ((handler-called false))
           (loop with handler-called = false
                 for item in (@ window default-keymap)
+                for name = (@ item name)
                 for predicate = (@ item predicate)
                 for func = (@ item func)
                 for prevent-default = (@ item prevent-default)
                 while (not handler-called)
                 when (funcall predicate event)
-                  do (funcall func event)
+                  do (chain console
+                            (log "Calling key handler for" name))
+                     (funcall func event)
                      (setf handler-called
                            t)
                      (when (or
