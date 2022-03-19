@@ -289,6 +289,13 @@
                (paragraph (go-up-to "P" node)))
           paragraph))
 
+      (defun get-current-block-node ()
+        (let* ((selection (chain window
+                                 (get-selection)))
+               (node (@ selection
+                        base-node)))
+          (go-up-to-block-node node)))
+
       (defun caret-position (options)
         ;; Idea was taken from
         ;; https://github.com/accursoft/caret/blob/922257adae80c529c237deaddc49f65d7c794534/jquery.caret.js#L17-L29
@@ -454,8 +461,7 @@
                         (@ event alt-key)))
                  :func
                  (lambda (event)
-                   (let* ((current-block
-                            (go-up-to-block-node (@ event target)))
+                   (let* ((current-block (get-current-block-node))
                           (block-tag (@ current-block tag-name)))
                      (unless (= block-tag
                                 "pre")
