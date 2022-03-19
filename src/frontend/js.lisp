@@ -532,7 +532,7 @@
                            t)
                      (when (or
                             ;; by default we are preventing
-                            (is prevent-default undefined)
+                            (= prevent-default undefined)
                             ;; but user might override it
                             ;; specifying False to this attribute:
                             prevent-default)
