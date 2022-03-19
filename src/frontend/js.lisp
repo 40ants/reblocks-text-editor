@@ -5,7 +5,9 @@
                 #:regex
                 #:chain
                 #:@
-                #:create))
+                #:create
+                #:false
+                #:undefined))
 (in-package #:reblocks-text-editor/frontend/js)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; 
@@ -120,7 +122,7 @@
                          (- (chain element
                                    inner-text
                                    length)
-                            position)
+                             position)
                          position)))
              (chain range
                     (collapse t))
@@ -441,69 +443,104 @@
             (t
              (show-path)
              (update-active-paragraph)))))
+
+      (defun make-defaut-keymap ()
+        (list
+         (create :predicate
+                 (lambda (event)
+                   (and (= (@ event key)
+                           "Enter")
+                        (@ event alt-key)))
+                 :func
+                 (lambda (event)
+                   (let* ((current-block
+                            (go-up-to-block-node (@ event target)))
+                          (block-tag (@ current-block tag-name)))
+                     (unless (= block-tag
+                                "pre")
+                       ;; When inside a list item,
+                       ;; this split will add a new item.
+                       ;; Otherwise, it works as a usual Enter,
+                       ;; adding a new paragraph:
+                       (change-text event "split")))))
+         (create :predicate
+                 (lambda (event)
+                   (and (= (@ event key)
+                           "ArrowRight")
+                        (@ event alt-key)))
+                 :func
+                 (lambda (event)
+                   (change-text event "indent")))
+         (create :predicate
+                 (lambda (event)
+                   (and (= (@ event key)
+                           "ArrowLeft")
+                        (@ event alt-key)))
+                 :func
+                 (lambda (event)
+                   (change-text event "dedent")))
+         (create :predicate
+                 (lambda (event)
+                   (= (@ event key)
+                      "ArrowUp"))
+                 :func
+                 (lambda (event)
+                   (change-text event "move-cursor-up")))
+         (create :predicate
+                 (lambda (event)
+                   (= (@ event key)
+                      "ArrowDown"))
+                 :func
+                 (lambda (event)
+                   (change-text event "move-cursor-down")))
+         (create :predicate
+                 (lambda (event)
+                   (= (@ event key)
+                      ,shortcut))
+                 :func
+                 (lambda (event)
+                   (when (process-shortcut event)
+                     (chain event
+                            (prevent-default))))
+                 :prevent-default nil)
+         (create :predicate
+                 ;; Cmd-Z
+                 (lambda (event)
+                   (and (= (@ event key-code)
+                           90)
+                        (@ event meta-key)))
+                 :func
+                 (lambda (event)
+                   (process-undo event)))))
+
+      (setf (@ window default-keymap)
+            (make-defaut-keymap))
       
       (defun on-keydown (event)
         (chain console
                (log "on-keydown event" event))
-        (cond
-          ((and (= (@ event key)
-                   "Enter")
-                (@ event alt-key))
-           ;; When inside a list item,
-           ;; this split will add a new item.
-           ;; Otherwise, it works as a usual Enter,
-           ;; adding a new paragraph:
-           (change-text event "split")
-           (chain event
-                  (prevent-default)))
-          
-          ;; Arrow movements
-          ((and (= (@ event key)
-                   "ArrowRight")
-                (@ event alt-key))
-           
-           (change-text event "indent")
-           (chain event
-                  (prevent-default)))
-          
-          ((and (= (@ event key)
-                   "ArrowLeft")
-                (@ event alt-key))
-           
-           (change-text event "dedent")
-           (chain event
-                  (prevent-default)))
-          
-          ;; Up&Down without modifiers
-          ((= (@ event key)
-              "ArrowUp")
-           (change-text event "move-cursor-up")
-           (chain event
-                  (prevent-default)))
-          
-          ((= (@ event key)
-              "ArrowDown")
-           (change-text event "move-cursor-down")
-           (chain event
-                  (prevent-default)))
-          
-          ((= (@ event key)
-              ,shortcut)
-           (when (process-shortcut event)
-             (chain event
-                    (prevent-default))))
+        (let ((handler-called false))
+          (loop with handler-called = false
+                for item in (@ window default-keymap)
+                for predicate = (@ item predicate)
+                for func = (@ item func)
+                for prevent-default = (@ item prevent-default)
+                while (not handler-called)
+                when (funcall predicate event)
+                  do (funcall func event)
+                     (setf handler-called
+                           t)
+                     (when (or
+                            ;; by default we are preventing
+                            (is prevent-default undefined)
+                            ;; but user might override it
+                            ;; specifying False to this attribute:
+                            prevent-default)
+                       (chain event
+                              (prevent-default))))
+          (unless handler-called
+            (update-active-paragraph))))
 
-          ;; Cmd-Z
-          ((and (= (@ event key-code)
-                   90)
-                (@ event meta-key))
-           (process-undo event)
-           (chain event
-                  (prevent-default)))
-          (t
-           (update-active-paragraph))))
-
-      
       (defun on-paste (event)
         (chain console
                (log "on-paste event" event))
@@ -572,6 +609,6 @@
           (when (and (= type "deleteContentBackward")
                      (at-the-paragraph-beginning))
             (change-text event "join-with-prev-paragraph")
-             
+            
             (chain event
                    (prevent-default))))))))
