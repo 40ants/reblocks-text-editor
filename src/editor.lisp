@@ -153,7 +153,7 @@ Second line
 
 
 (defun paste-text (document path cursor-position pasted-text)
-  (log:info "User wants to paste this text \"~A\"" pasted-text)
+  (log:debug "User wants to paste this text \"~A\"" pasted-text)
 
   (let* ((current-paragraph
            (reblocks-text-editor/document/ops::find-changed-node document path))
@@ -297,7 +297,7 @@ Second line
 (defgeneric process-shortcut (widget &key key-code path cursor-position &allow-other-keys)
   (:method (widget &key key-code path cursor-position &allow-other-keys)
     (let ((document (document widget)))
-      (log:info "Key" key-code "pressed")
+      (log:debug "Key" key-code "pressed")
 
       (let ((paragraph (reblocks-text-editor/document/ops::find-changed-node document path)))
         (multiple-value-bind (node new-cursor-position)
@@ -307,7 +307,7 @@ Second line
 
 (defgeneric process-link (widget &key href &allow-other-keys)
   (:method (widget &key href &allow-other-keys)
-    (log:info "Link" href "was clicked")))
+    (log:debug "Link" href "was clicked")))
 
 
 (defmethod reblocks/widget:render ((widget editor))

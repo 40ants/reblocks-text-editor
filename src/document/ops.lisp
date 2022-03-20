@@ -271,7 +271,7 @@
                  (eql current-list-item
                       (select-outer-list-item document
                                               previous-paragraph))))
-           (log:error "Joining with the previous paragraph" previous-paragraph)
+           (log:debug "Joining with the previous paragraph" previous-paragraph)
            (check-type previous-paragraph common-doc:paragraph)
            
            (let* ((first-part (reblocks-text-editor/utils/markdown::to-markdown previous-paragraph))
@@ -313,7 +313,7 @@
                                                 0)))
           ;; Part where we might join two list-items
           (t
-           (log:error "Joining with the previous list item")
+           (log:debug "Joining with the previous list item")
            (let ((current-list-item (select-outer-list-item document
                                                             paragraph-to-delete)))
              (when current-list-item
@@ -423,7 +423,7 @@
 
 
 (defun join-list-items (document previous-list-item current-list-item)
-  (log:error "Joining list items"
+  (log:debug "Joining list items"
              previous-list-item
              current-list-item)
   (let ((items-to-move (children current-list-item)))
@@ -831,7 +831,7 @@
 
    If node is a list-item, it will be transformed into a nested list."
   (let ((current-node (find-changed-node document path)))
-    (log:error "Indenting" current-node)
+    (log:debug "Indenting" current-node)
     
     (let* ((current-list-item (select-outer-list-item document current-node))
            (previous-list-item (when current-list-item
@@ -876,7 +876,7 @@
    In case if the current list also in the list item,
    then the current list item will be added after it."
   (let ((current-node (find-changed-node document path)))
-    (log:error "Indenting" current-node)
+    (log:debug "Indenting" current-node)
     
     (let* ((current-list-item (select-outer-list-item document current-node))
            (next-sibling (find-next-sibling document current-list-item)))
