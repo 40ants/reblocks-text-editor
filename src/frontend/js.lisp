@@ -536,7 +536,26 @@
                       "Enter"))
                  :func
                  (lambda (event)
-                   (alert "FOO")))))
+                   (let* ((selection (chain window
+                                            (get-selection)))
+                          ;; This should be a pre/code/span/@text node:
+                          (node (@ selection
+                                   base-node))
+                          (parent-node (@ node
+                                          parent-node))
+                          (parent-node-id
+                            (@ parent-node id))
+                          (caret (caret-position))
+                          (text (@ node text-content)))
+                     (setf (@ node text-content)
+                           (+ (chain text
+                                     (substring 0 caret))
+                               #\Newline
+                               (chain text
+                                      (substring caret))))
+                     (set-cursor (create node-id parent-node-id
+                                         position (1+ caret)))
+                     (change-text event "modify"))))))
 
       (setf (@ window default-keymap)
             (make-defaut-keymap))

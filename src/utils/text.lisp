@@ -14,13 +14,22 @@
                string))
 
 
-(defun remove-html-tags (html-string)
-  (let ((result (cl-ppcre:regex-replace-all "<[^>]+>" html-string
-                                            "")))
-    (plump:decode-entities
-     (if (string= result +zero-width-space+)
-         result
-         (cl-ppcre:regex-replace-all +zero-width-space+
-                                     result
-                                     "")))))
+(defun remove-html-tags (html-string &key (remove-new-lines t))
+  (let* ((result (cl-ppcre:regex-replace-all "<[^>]+>" html-string
+                                             ""))
+         (result (if (string= result +zero-width-space+)
+                     result
+                     (cl-ppcre:regex-replace-all +zero-width-space+
+                                                 result
+                                                 "")))
+         (result (plump:decode-entities result))
+         (result (if remove-new-lines
+                     ;; For some strange reason sometimes browser starts
+                     ;; passing newlines even inside span elements. Why? Don't know.
+                     ;; Thus by default we are removing new lines.
+                     ;; However, when processing content of code blocks
+                     ;; it is useful to keep newlines.
+                     (str:replace-all '(#\Newline) "" result)
+                     result)))
+    result))
 

@@ -32,6 +32,8 @@
                 #:slice)
   (:import-from #:metacopy
                 #:copy-thing)
+  (:import-from #:reblocks-text-editor/utils/text
+                #:remove-html-tags)
   (:local-nicknames (#:ops #:reblocks-text-editor/document/ops))
   (:export #:on-document-update))
 (in-package #:reblocks-text-editor/editor)
@@ -91,19 +93,21 @@ Second line
 
 
 (defun process-usual-update (document path new-html cursor-position)
-  (let* ((paragraph (reblocks-text-editor/document/ops::find-changed-node document path))
-         (plain-text (reblocks-text-editor/utils/text::remove-html-tags new-html)))
+  (let* ((node (reblocks-text-editor/document/ops::find-changed-node document path)))
     (cond
-      (paragraph
-       (log:error "Updating paragraph at" path)
-       (multiple-value-bind (current-node new-cursor-position)
-           (reblocks-text-editor/document/ops::update-node-content
-            document paragraph plain-text cursor-position)
+      (node
+       (let ((plain-text (remove-html-tags
+                          new-html
+                          :remove-new-lines (not (typep node 'common-doc:code-block)))))
+         (log:debug "Updating node content at" path)
+         (multiple-value-bind (current-node new-cursor-position)
+             (reblocks-text-editor/document/ops::update-node-content
+              document node plain-text cursor-position)
 
-         (reblocks-text-editor/document/ops::ensure-cursor-position-is-correct
-          document current-node new-cursor-position)))
+           (reblocks-text-editor/document/ops::ensure-cursor-position-is-correct
+            document current-node new-cursor-position))))
       (t
-       (log:warn "Cant find paragraph at" path)))))
+       (log:warn "Cant find node at" path)))))
 
 
 (defun move-cursor-up (document path cursor-position)
@@ -117,6 +121,8 @@ Second line
 (defun move-cursor-down (document path cursor-position)
   (let* ((current-paragraph (ops::find-changed-node document path))
          (next-paragraph (ops::find-next-paragraph document current-paragraph)))
+    ;; TODO: solve problem of moving cursor inside code blocks and other
+    ;; blocks rendered in multiple lines:
     (check-type current-paragraph common-doc:paragraph)
     (when next-paragraph
       (ops::ensure-cursor-position-is-correct document next-paragraph cursor-position))))
@@ -222,10 +228,7 @@ Second line
 
     (log:debug "Processing" new-html path cursor-position change-type)
     
-    (let ((document (document widget))
-          ;; For some strange reason sometimes browser starts
-          ;; passing newlines even inside span elements. Why? Don't know.
-          (new-html (str:replace-all '(#\Newline) "" new-html)))
+    (let ((document (document widget)))
       (cond
         ;; This operation is similar to "split-paragraph"
         ;; but it splits a paragraph and created a new list
