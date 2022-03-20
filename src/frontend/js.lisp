@@ -526,15 +526,38 @@
                  (lambda (event)
                    (process-undo event)))))
 
+
+      (defun make-code-block-keymap ()
+        (list
+         (create :name "Enter"
+                 :predicate
+                 (lambda (event)
+                   (= (@ event key)
+                      "Enter"))
+                 :func
+                 (lambda (event)
+                   (alert "FOO")))))
+
       (setf (@ window default-keymap)
             (make-defaut-keymap))
+      
+      (setf (@ window code-block-keymap)
+            (make-code-block-keymap))
       
       (defun on-keydown (event)
         (chain console
                (log "on-keydown event" event))
-        (let ((handler-called false))
+        (let* ((default-keymap (@ window default-keymap))
+               (code-block-keymap (@ window code-block-keymap))
+               (current-node (get-current-block-node))
+               (keymap (if (= (@ current-node tag-name)
+                              "PRE")
+                           (append code-block-keymap
+                                   default-keymap)
+                           default-keymap))
+               (handler-called false))
           (loop with handler-called = false
-                for item in (@ window default-keymap)
+                for item in keymap
                 for name = (@ item name)
                 for predicate = (@ item predicate)
                 for func = (@ item func)
