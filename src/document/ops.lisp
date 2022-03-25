@@ -258,7 +258,7 @@
     (unless node
       (log:error "Unable to find CommonDoc node with" node-id))
     (unless (typep node 'common-doc:paragraph)
-      (log:warn "Changed node should be a whole PARAGRAPH."))
+      (log:warn "Changed node should be a whole PARAGRAPH, not ~S" (type-of node)))
 
     (values node)))
 

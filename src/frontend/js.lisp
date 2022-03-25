@@ -681,21 +681,43 @@
                       do (setf has-only-zero-spaces nil))
               (values has-only-zero-spaces)))))
       
+      (defun at-the-block-beginning ()
+        (let* ((node (get-current-block-node))
+               (position (caret-position)))
+          (when (and node
+                     (>= position 0))
+            (let* ((content (@ node
+                               inner-text))
+                   (has-only-zero-spaces t))
+              (loop for idx from (1- position) downto 0
+                    for symbol = (elt content idx)
+                    unless (= symbol "​")
+                      do (setf has-only-zero-spaces nil))
+              (values has-only-zero-spaces)))))
+      
       (defun before-input (event)
         (let ((type (@ event
                        input-type)))
           (chain console
                  (log "Before input" event))
-          
-          (when (= type "insertParagraph")
-            (change-text event "split-paragraph")
-            
-            (chain event
-                   (prevent-default)))
 
-          (when (and (= type "deleteContentBackward")
-                     (at-the-paragraph-beginning))
-            (change-text event "join-with-prev-paragraph")
+          (cond
+            ((= type "insertParagraph")
+             (change-text event "split-paragraph")
+             
+             (chain event
+                    (prevent-default)))
             
-            (chain event
-                   (prevent-default))))))))
+            ((and (= type "deleteContentBackward")
+                  (at-the-paragraph-beginning))
+             (change-text event "join-with-prev-paragraph")
+             
+             (chain event
+                    (prevent-default)))
+            
+            ((and (= type "deleteContentBackward")
+                  (at-the-block-beginning))
+             (change-text event "maybe-delete-block")
+             
+             (chain event
+                    (prevent-default)))))))))

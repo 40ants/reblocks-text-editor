@@ -33,6 +33,7 @@
   (:import-from #:metacopy
                 #:copy-thing)
   (:import-from #:reblocks-text-editor/utils/text
+                #:trim-spaces
                 #:remove-html-tags)
   (:local-nicknames (#:ops #:reblocks-text-editor/document/ops))
   (:export #:on-document-update))
@@ -173,6 +174,36 @@ Second line
                                 new-node)))
 
 
+(defgeneric maybe-delete-block (document path-or-node)
+  (:documentation "Called when cursor position is at the beginning of the document block and user hit backspace.")
+  (:method ((document t) (path-or-node t))
+    ;; Just ignore any node which has no a special processing.
+    ))
+
+
+(defmethod maybe-delete-block (document (path list))
+  (log:debug "User wants to delete block at" path)
+
+  (let* ((node
+           (reblocks-text-editor/document/ops::find-changed-node document path)))
+    (maybe-delete-block document node)))
+
+
+(defmethod maybe-delete-block (document (node common-doc:code-block))
+  (let ((text (trim-spaces
+               (common-doc:text (first (common-doc:children node))))))
+    (when (string= text "")
+      (let ((prev-node
+              (ops::find-previous-sibling document
+                                          node)))
+        (ops::delete-node document node)
+        (when prev-node
+          (ops::ensure-cursor-position-is-correct document
+                                                  prev-node
+                                                  0
+                                                  :from-the-end t))))))
+
+
 (defgeneric on-document-update (widget)
   (:documentation "Called after the each document update.")
   (:method ((widget editor))
@@ -291,6 +322,9 @@ Second line
                   "paste")
          (paste-text document path cursor-position
                      pasted-text))
+        ((string= change-type
+                  "maybe-delete-block")
+         (maybe-delete-block document path))
         (t
          (process-usual-update document path new-html cursor-position)))
 
