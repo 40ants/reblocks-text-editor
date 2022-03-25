@@ -4,8 +4,12 @@
                 #:children)
   (:import-from #:scriba)
   (:import-from #:reblocks-text-editor/utils/markdown
+                #:from-markdown
                 #:to-markdown)
-  (:import-from #:reblocks-text-editor/utils/text)
+  (:import-from #:reblocks-text-editor/utils/text
+                #:ensure-two-newlines-at-the-end
+                #:remove-zero-spaces-unless-string-is-empty
+                #:+zero-width-space+)
   (:import-from #:reblocks-text-editor/html)
   (:import-from #:alexandria
                 #:length=
@@ -14,6 +18,8 @@
                 #:caret-position
                 #:get-next-reference-id)
   (:import-from #:serapeum
+                #:length<
+                #:length>
                 #:slice)
   (:local-nicknames (#:dom #:reblocks-text-editor/dom/ops)))
 (in-package #:reblocks-text-editor/document/ops)
@@ -92,21 +98,38 @@
            (if (eql node node-to-replace)
                new-node
                node)))
-    (map-document document #'do-replace)))
+    (map-document document #'do-replace)
+    
+    (dom::insert-node document
+                      new-node
+                      :relative-to node-to-replace)
+    (dom::delete-node document node-to-replace)))
 
-(defun replace-node-content (document node-to-replace new-children)
+
+(defun replace-node-content (document node new-content)
   (log:debug "Replacing node content"
-             node-to-replace
-             new-children)
-  (flet ((do-replace (node depth)
-           (declare (ignore depth))
-           (when (eql node node-to-replace)
-             (unless (typep node 'node-with-children)
-               (error "Unable to replace content for node ~A" node))
-             (setf (children node)
-                   new-children))
-           node))
-    (map-document document #'do-replace)))
+             node
+             new-content)
+  (typecase node
+    (common-doc:text-node
+     (unless (typep new-content 'string)
+       (error "I can new content for text-node should be a string. I've got ~A"
+              new-content))
+     (setf (common-doc:text node)
+           new-content))
+    (node-with-children
+     (unless (typep new-content 'list)
+       (error "I can new content for node with children should be a list. I've got ~A"
+              new-content))
+     (setf (children node)
+           new-content))
+    (t
+     (error "Unable to replace content for ~A"
+            node)))
+  
+  ;; Updating on the frontend
+  (dom::update-node document node)
+  (values))
 
 
 (defun find-node-at-position (node cursor-position)
@@ -661,11 +684,16 @@
 
 
 (defun prepare-new-content (document text)
-  (let* ((paragraph (reblocks-text-editor/utils/markdown::from-markdown text))
-         ;; (paragraph (replace-markdown-links paragraph))
-         (paragraph (parse-scriba-nodes paragraph)))
+  (let ((node
+          (cond
+            ((string= text "```")
+             (common-doc:make-code-block nil
+                                         (common-doc:make-text +zero-width-space+)))
+            (t
+             (parse-scriba-nodes
+              (from-markdown text))))))
     (add-reference-ids document
-                       :to-node paragraph)))
+                       :to-node node)))
 
 
 
@@ -700,6 +728,11 @@
        (update-node-content document node
                             (prepare-new-content document new-content)
                             cursor-position))
+      (common-doc:code-block
+       (replace-node document
+                     node
+                     new-content)
+       (values new-content  0))
       ;; A new list item was created by manual enter of the "* "
       ;; at the beginning of the node:
       (common-doc:unordered-list
@@ -734,11 +767,6 @@
             (replace-node document
                           node
                           list-node)
-
-            (dom::insert-node document
-                              list-node
-                              :relative-to node)
-            (dom::delete-node document node)
             (values list-node
                     (decf cursor-position 2))))))
       ;; Otherwise, we just insert
@@ -752,8 +780,6 @@
        (replace-node-content document
                              node
                              new-content)
-
-       (dom::update-node document node)
        (values node cursor-position)))))
 
 
@@ -766,17 +792,29 @@
              node
              new-content
              cursor-position)
-  (let ((children (common-doc:children node)))
-    (unless (length= 1 children)
-      (error "This code block has more than 1 child: ~A"
-             node))
-    (unless (typep (first children)
-                   'common-doc:text-node)
-      (error "Code block should have a TEXT-NODE as it's child, but it is: ~A"
-             (first children)))
-    
-    (setf (common-doc:text (first children))
-          new-content)
+  (let* ((children (common-doc:children node))
+         (new-content (remove-zero-spaces-unless-string-is-empty new-content))
+         ;; (new-content (ensure-two-newlines-at-the-end new-content))
+         )
+    (log:debug "New block content is" new-content)
+    (cond
+      ((length< 1 children)
+       (error "This code block should have no more than 1 child: ~A"
+              node))
+      ((null children)
+       (replace-node-content document
+                             node
+                             (list (common-doc:make-text new-content))))
+      (t
+       
+       (unless (typep (first children)
+                      'common-doc:text-node)
+         (error "Code block should have a TEXT-NODE as it's child, but it is: ~A"
+                (first children)))
+       
+       (replace-node-content document
+                             (first children)
+                             new-content)))
     (values node cursor-position)))
 
 

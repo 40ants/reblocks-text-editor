@@ -547,10 +547,39 @@
                             (@ parent-node id))
                           (caret (caret-position))
                           (text (@ node text-content)))
+                     ;; (let ((num-newlines-to-add
+                     ;;         (if (or (= (elt text (1+ caret))
+                     ;;                    #\Newline)
+                     ;;                 (= (elt text (1- caret))
+                     ;;                    #\Newline))
+                     ;;             1
+                     ;;             2)))
+                     ;;   (setf (@ node text-content)
+                     ;;         (if (= num-newlines-to-add 1)
+                     ;;             (+ (chain text
+                     ;;                       (substring 0 caret))
+                     ;;                 #\Newline
+                     ;;                 (chain text
+                     ;;                        (substring caret)))
+                     ;;             (+ (chain text
+                     ;;                       (substring 0 caret))
+                     ;;                 #\Newline
+                     ;;                 #\Newline
+                     ;;                 (chain text
+                     ;;                        (substring caret)))))
+                     ;;   (set-cursor (create node-id parent-node-id
+                     ;;                       position (+ caret num-newlines-to-add))))
+
+                     
                      (setf (@ node text-content)
                            (+ (chain text
                                      (substring 0 caret))
                                #\Newline
+                               ;; (if (= (elt text
+                               ;;             caret)
+                               ;;        "​")
+                               ;;     ""
+                               ;;     "​")
                                (chain text
                                       (substring caret))))
                      (set-cursor (create node-id parent-node-id

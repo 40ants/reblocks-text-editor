@@ -25,6 +25,11 @@
         :margin-left -0.5rem
         :padding-left 0.5rem
         :margin-right -0.5rem
-        :padding-right 0.5rem)
+        :padding-right 0.5rem
+        :min-width 10rem
+        :min-height 2rem
+        ;; ((:and code :after)
+        ;;  :content " ")
+        )
        ((:and p .active)
         (.markup :display inline-block))))))

@@ -105,6 +105,13 @@
     (reblocks/html:with-html
       (:pre :id (common-doc:reference node)
             :class class
+            ;; (:code :id (format nil "~A-code"
+            ;;                    (common-doc:reference node))
+            ;;        ;; (if (common-doc:children node)
+            ;;        ;;     (common-doc:text
+            ;;        ;;      (first (common-doc:children node)))
+            ;;        ;;     "")
+            ;;        )
             (:code (mapc #'to-html (uiop:ensure-list
                                     (common-doc:children node))))))))
 

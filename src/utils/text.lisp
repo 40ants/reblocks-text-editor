@@ -13,15 +13,22 @@
   (string-trim '(#\Newline #\Space #\Tab #\Zero_Width_Space)
                string))
 
+(defun remove-zero-spaces-unless-string-is-empty (string)
+  (cond
+    ((string= string "")
+     +zero-width-space+)
+    ((string= string +zero-width-space+)
+     string)
+    (t
+     (cl-ppcre:regex-replace-all +zero-width-space+
+                                 string
+                                 ""))))
+
 
 (defun remove-html-tags (html-string &key (remove-new-lines t))
   (let* ((result (cl-ppcre:regex-replace-all "<[^>]+>" html-string
                                              ""))
-         (result (if (string= result +zero-width-space+)
-                     result
-                     (cl-ppcre:regex-replace-all +zero-width-space+
-                                                 result
-                                                 "")))
+         (result (remove-zero-spaces-unless-string-is-empty result))
          (result (plump:decode-entities result))
          (result (if remove-new-lines
                      ;; For some strange reason sometimes browser starts
@@ -33,3 +40,37 @@
                      result)))
     result))
 
+
+(defun ensure-two-newlines-at-the-end (string)
+  (if (and (>= (length string)
+               2)
+           (eql (elt string (1- (length string)))
+                #\Newline)
+           (not (eql (elt string (1- (1- (length string))))
+                     #\Newline)))
+      (with-output-to-string (s)
+        (write-string string s)
+        (write-char #\Newline s))
+      string)
+  
+  ;; (let ((num-newlines-to-add
+  ;;         (+ (if (and (>= (length string)
+  ;;                         1)
+  ;;                     (not (eql (elt string (1- (length string)))
+  ;;                               #\Newline)))
+  ;;                1
+  ;;                0)
+              
+  ;;             (if (and (>= (length string)
+  ;;                          2)
+  ;;                      (not (eql (elt string (1- (1- (length string))))
+  ;;                                #\Newline))
+  ;;                      (not (eql (elt string (1- (1- (length string))))
+  ;;                                #\Newline)))))
+  ;;         )) (if 
+  ;;             (with-output-to-string (s)
+  ;;               (write-string string s)
+  ;;               (write-char #\Newline s)
+  ;;               (write-char #\Newline s))
+  ;;             string))
+  )
