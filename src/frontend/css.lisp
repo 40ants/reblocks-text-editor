@@ -22,14 +22,19 @@
         :padding 0)
        (.code-block
         :background-color "#EEE"
+        :box-sizing border-box
+        ;; Invisible border (will become visible for active block)
+        :border 1px solid "#EEE"
+        
         :margin-left -0.5rem
         :padding-left 0.5rem
         :margin-right -0.5rem
         :padding-right 0.5rem
         :min-width 10rem
-        :min-height 2rem
-        ;; ((:and code :after)
-        ;;  :content " ")
-        )
+        :min-height 2rem)
+       ((:and .code-block .active)
+        :border 1px solid "#444"
+        (code
+         :border none))
        ((:and p .active)
         (.markup :display inline-block))))))

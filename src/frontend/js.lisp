@@ -133,7 +133,7 @@
             (t
              (chain console (log "Unable to find element to place cursor to" element-id))))
 
-          (update-active-paragraph)))
+          (update-active-block)))
 
       (defun take (n arr)
         (loop for item in arr
@@ -371,23 +371,23 @@
 
       (defvar +prev-current-node+ nil)
       
-      (defun update-active-paragraph ()
+      (defun update-active-block ()
         (let* ((selection (chain window
                                  (get-selection)))
                (node (@ selection
                         base-node)))
           (unless (eql +prev-current-node+
                        node)
-            (let* ((current-paragraph (go-up-to "P" node))
-                   (editor (get-editor-content-node current-paragraph)))
+            (let* ((current-block (go-up-to-block-node node))
+                   (editor (get-editor-content-node current-block)))
               (when editor
-                (let ((all-paragraphs (chain editor
-                                             (get-elements-by-tag-name "P"))))
-                  (loop for p in all-paragraphs
+                (let ((all-blocks (chain editor
+                                         (query-selector-all ".block"))))
+                  (loop for p in all-blocks
                         do (chain p
                                   class-list
                                   (remove "active")))
-                  (chain current-paragraph
+                  (chain current-block
                          class-list
                          (add "active"))))))))
 
@@ -449,7 +449,7 @@
              (open-link event link-href))
             (t
              (show-path)
-             (update-active-paragraph)))))
+             (update-active-block)))))
 
       (defun make-defaut-keymap ()
         (list
@@ -626,7 +626,7 @@
                        (chain event
                               (prevent-default))))
           (unless handler-called
-            (update-active-paragraph))))
+            (update-active-block))))
 
       (defun on-paste (event)
         (chain console
