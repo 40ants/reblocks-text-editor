@@ -35,6 +35,8 @@
   (:import-from #:reblocks-text-editor/utils/text
                 #:trim-spaces
                 #:remove-html-tags)
+  (:import-from #:reblocks-text-editor/blocks/code
+                #:code)
   (:local-nicknames (#:ops #:reblocks-text-editor/document/ops))
   (:export #:on-document-update))
 (in-package #:reblocks-text-editor/editor)
@@ -111,22 +113,66 @@ Second line
        (log:warn "Cant find node at" path)))))
 
 
-(defun move-cursor-up (document path cursor-position)
-  (let* ((current-paragraph (ops::find-changed-node document path))
-         (prev-paragraph (ops::find-previous-paragraph document current-paragraph)))
-    (check-type current-paragraph common-doc:paragraph)
+(defgeneric move-cursor-up (document path-or-node cursor-position)
+  (:method ((document t) (path-or-node t) (cursor-position t))))
+
+
+(defmethod move-cursor-up (document (path list) cursor-position)
+  (let ((node (ops::find-changed-node document path)))
+    (move-cursor-up document node cursor-position)))
+
+
+(defmethod move-cursor-up (document (node common-doc:paragraph) cursor-position)
+  (let* ((prev-paragraph (ops::find-previous-paragraph document node)))
     (when prev-paragraph
       (ops::ensure-cursor-position-is-correct document prev-paragraph cursor-position))))
 
 
-(defun move-cursor-down (document path cursor-position)
-  (let* ((current-paragraph (ops::find-changed-node document path))
-         (next-paragraph (ops::find-next-paragraph document current-paragraph)))
+(defmethod move-cursor-up (document (node common-doc:code-block) caret-position)
+  (let* ((text (code node))
+         (new-caret-position (reblocks-text-editor/utils/text::move-caret-on-the-prev-line text caret-position)))
+    (cond
+      (new-caret-position
+       (ops::ensure-cursor-position-is-correct document node new-caret-position))
+      (t
+       (let ((prev-paragraph (ops::find-previous-paragraph document node))
+             (new-caret-position (reblocks-text-editor/utils/text::caret-position-from-beginning-of-the-line text caret-position)))
+         ;; TODO: solve problem of moving cursor inside code blocks and other
+         ;; blocks rendered in multiple lines:
+         (when prev-paragraph
+           (ops::ensure-cursor-position-is-correct document prev-paragraph new-caret-position)))))))
+
+
+(defgeneric move-cursor-down (document path-or-node cursor-position)
+  (:method ((document t) (path-or-node t) (cursor-position t))))
+
+
+(defmethod move-cursor-down (document (path list) cursor-position)
+  (let ((node (ops::find-changed-node document path)))
+    (move-cursor-down document node cursor-position)))
+
+
+(defmethod move-cursor-down (document (node common-doc:paragraph) cursor-position)
+  (let ((next-paragraph (ops::find-next-paragraph document node)))
     ;; TODO: solve problem of moving cursor inside code blocks and other
     ;; blocks rendered in multiple lines:
-    (check-type current-paragraph common-doc:paragraph)
     (when next-paragraph
       (ops::ensure-cursor-position-is-correct document next-paragraph cursor-position))))
+
+
+(defmethod move-cursor-down (document (node common-doc:code-block) caret-position)
+  (let* ((text (code node))
+         (new-caret-position (reblocks-text-editor/utils/text::move-caret-on-the-next-line text caret-position)))
+    (cond
+      (new-caret-position
+       (ops::ensure-cursor-position-is-correct document node new-caret-position))
+      (t
+       (let ((next-paragraph (ops::find-next-paragraph document node))
+             (new-caret-position (reblocks-text-editor/utils/text::caret-position-from-beginning-of-the-line text caret-position)))
+         ;; TODO: solve problem of moving cursor inside code blocks and other
+         ;; blocks rendered in multiple lines:
+         (when next-paragraph
+           (ops::ensure-cursor-position-is-correct document next-paragraph new-caret-position)))))))
 
 
 (defun insert-node (document new-node relative-to &key (position :after))
@@ -191,7 +237,7 @@ Second line
 
 (defmethod maybe-delete-block (document (node common-doc:code-block))
   (let ((text (trim-spaces
-               (common-doc:text (first (common-doc:children node))))))
+               (code node))))
     (when (string= text "")
       (let ((prev-node
               (ops::find-previous-sibling document

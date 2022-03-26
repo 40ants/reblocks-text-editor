@@ -74,3 +74,81 @@
   ;;               (write-char #\Newline s))
   ;;             string))
   )
+
+
+(defun text-line-length (text pos)
+  (let* ((current-char (elt text pos))
+         (begin-pos (if (eql current-char #\Newline)
+                        (1+ pos)
+                        (let ((prev-newline
+                                (position #\Newline text
+                                          :from-end t
+                                          :end pos)))
+                          (if prev-newline
+                              (1+ prev-newline)
+                              0))))
+         (end-pos (let ((next-newline
+                          (position #\Newline text
+                                    :start (if (eql current-char #\Newline)
+                                               (1+ pos)
+                                               pos))))
+                    (or next-newline
+                        (length text)))))
+    (- end-pos
+       begin-pos)))
+
+
+(defun move-caret-on-the-next-line (text caret-position)
+  "Returns a new caret position (relative to the beginning of the text)
+   if there is a next line.
+
+   If next line is shorter than the current, then new position
+   will be right at the end.
+
+   If there is no next line, then function returns nil."
+  (let* ((position-in-line (caret-position-from-beginning-of-the-line text caret-position))
+         (next-newline-pos (position #\Newline text
+                                     :start caret-position)))
+    (when next-newline-pos
+      (let* ((begin-of-next-line (1+ next-newline-pos))
+             (next-line-length (text-line-length text (1+ next-newline-pos)))
+             (position-in-next-line (min position-in-line
+                                         next-line-length)))
+        (+ begin-of-next-line
+           position-in-next-line)))))
+
+
+(defun move-caret-on-the-prev-line (text caret-position)
+  "Returns a new caret position (relative to the beginning of the text)
+   if there is a next line.
+
+   If next line is shorter than the current, then new position
+   will be right at the end.
+
+   If there is no next line, then function returns nil."
+  (let* ((position-in-line (caret-position-from-beginning-of-the-line text caret-position))
+         (prev-newline-pos (position #\Newline text
+                                     :from-end t
+                                     :end caret-position)))
+    (when prev-newline-pos
+      (let* ((one-more-newline-back-pos (position #\Newline text
+                                                  :from-end t
+                                                  :end prev-newline-pos))
+             (begin-of-prev-line (if one-more-newline-back-pos
+                                     (1+ one-more-newline-back-pos)
+                                     0))
+             (prev-line-length (text-line-length text begin-of-prev-line))
+             (position-in-prev-line (min position-in-line
+                                         prev-line-length)))
+        (+ begin-of-prev-line
+           position-in-prev-line)))))
+
+
+(defun caret-position-from-beginning-of-the-line (text caret-position)
+  (let ((newline-pos (position #\Newline text
+                               :from-end t
+                               :end caret-position)))
+    (if newline-pos
+        (- caret-position newline-pos)
+        ;; We are at the first line:
+        caret-position)))
