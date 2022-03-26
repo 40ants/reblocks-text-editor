@@ -410,30 +410,29 @@
      nil)))
 
 
-(defun insert-into-paragraph (document path cursor-position node)
+(defun insert-into-paragraph (document node cursor-position new-content)
   "Inserts node into paragraph into the cursor position."
-  (let ((changed-paragraph (find-changed-node document path)))
-    (when changed-paragraph
-      (add-reference-ids document :to-node node)
-      
-      (let* ((plain-text (to-markdown changed-paragraph
-                                      ;; Do not eat the last space:
-                                      :trim-spaces nil))
-             (text-before-cursor (slice plain-text 0 cursor-position))
-             (text-after-cursor (slice plain-text cursor-position))
-             (nodes-before (common-doc:children (prepare-new-content document text-before-cursor)))
-             (nodes-after (common-doc:children (prepare-new-content document text-after-cursor)))
-             (new-nodes (append nodes-before
-                                (list node)
-                                nodes-after))
-             ;; Before update, we need to remove "empty" text nodes having only
-             ;; zero white-space. Otherwise, after the following text editing operation
-             ;; cursor will be moved to incorrect position, jumping one additional
-             ;; character to the right.
-             (new-nodes (remove-if #'empty-text-node new-nodes)))
+  (when node
+    (add-reference-ids document :to-node new-content)
+    
+    (let* ((plain-text (to-markdown node
+                                    ;; Do not eat the last space:
+                                    :trim-spaces nil))
+           (text-before-cursor (slice plain-text 0 cursor-position))
+           (text-after-cursor (slice plain-text cursor-position))
+           (nodes-before (common-doc:children (prepare-new-content document text-before-cursor)))
+           (nodes-after (common-doc:children (prepare-new-content document text-after-cursor)))
+           (new-nodes (append nodes-before
+                              (list new-content)
+                              nodes-after))
+           ;; Before update, we need to remove "empty" text nodes having only
+           ;; zero white-space. Otherwise, after the following text editing operation
+           ;; cursor will be moved to incorrect position, jumping one additional
+           ;; character to the right.
+           (new-nodes (remove-if #'empty-text-node new-nodes)))
 
-        (update-node-content document changed-paragraph new-nodes cursor-position)
-        (place-cursor-after-the document node)))))
+      (update-node-content document node new-nodes cursor-position)
+      (place-cursor-after-the document new-content))))
 
 
 (defun append-children (widget to-node nodes-to-append)

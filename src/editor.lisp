@@ -205,19 +205,40 @@ Second line
      (common-doc:make-text pasted-text))))
 
 
-(defun paste-text (document path cursor-position pasted-text)
+(defgeneric paste-text (document path-or-node caret-position pasted-text)
+  (:method (document path-or-node caret-position pasted-text)))
+
+
+(defmethod paste-text (document (path list) caret-position pasted-text)
   (log:debug "User wants to paste this text \"~A\"" pasted-text)
 
-  (let* ((current-paragraph
-           (reblocks-text-editor/document/ops::find-changed-node document path))
-         (text (to-markdown current-paragraph
+  (let* ((node
+           (reblocks-text-editor/document/ops::find-changed-node document path)))
+    (paste-text document node caret-position pasted-text)))
+
+
+(defmethod paste-text (document (node common-doc:paragraph) cursor-position pasted-text)
+  (let* ((text (to-markdown node
                             ;; It is important to not trim a space,
                             ;; otherwise a space before the cursor will be lost:
                             :trim-spaces nil))
          (text-before (slice text 0 cursor-position))
-         (new-node (make-node-from-pasted-text text-before pasted-text)))
-    (ops::insert-into-paragraph document path cursor-position
-                                new-node)))
+         (new-content (make-node-from-pasted-text text-before pasted-text)))
+    (ops::insert-into-paragraph document node cursor-position
+                                new-content)))
+
+
+(defmethod paste-text (document (node common-doc:code-block) caret-position pasted-text)
+  (let* ((text (reblocks-text-editor/blocks/code::code node))
+         (text-before (slice text 0 caret-position))
+         (text-after (slice text caret-position))
+         (new-content (concatenate 'string text-before pasted-text text-after))
+         (new-caret-position (+ caret-position
+                                (length pasted-text))))
+    (ops::update-node-content document node
+                              new-content
+                              caret-position)
+    (ops::ensure-cursor-position-is-correct document node new-caret-position)))
 
 
 (defgeneric maybe-delete-block (document path-or-node)
