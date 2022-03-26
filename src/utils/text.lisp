@@ -149,6 +149,6 @@
                                :from-end t
                                :end caret-position)))
     (if newline-pos
-        (- caret-position newline-pos)
+        (- caret-position newline-pos 1)
         ;; We are at the first line:
         caret-position)))
