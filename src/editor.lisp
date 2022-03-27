@@ -33,6 +33,7 @@
   (:import-from #:metacopy
                 #:copy-thing)
   (:import-from #:reblocks-text-editor/utils/text
+                #:+zero-width-space+
                 #:trim-spaces
                 #:remove-html-tags)
   (:import-from #:reblocks-text-editor/blocks/code
@@ -270,6 +271,29 @@ Second line
                                                   0
                                                   :from-the-end t))))))
 
+(defgeneric start-new-paragraph (document path-or-node)
+  (:documentation "Creates a new paragraph right after the current node and moves caret into it.")
+  (:method ((document t) (path-or-node t))))
+
+
+(defmethod start-new-paragraph (document (path list))
+  (log:debug "Creating a new paragraph after the node at" path)
+
+  (let* ((node
+           (reblocks-text-editor/document/ops::find-changed-node document path)))
+    (start-new-paragraph document node)))
+
+
+(defmethod start-new-paragraph (document (node common-doc:document-node))
+  (let ((paragraph (common-doc:make-paragraph
+                    (common-doc:make-text +zero-width-space+))))
+    (ops::add-reference-ids document :to-node paragraph)
+    (ops::insert-node document paragraph
+                      :relative-to node)
+    (ops::ensure-cursor-position-is-correct document
+                                            (first (common-doc:children paragraph))
+                                            0)))
+
 
 (defgeneric on-document-update (widget)
   (:documentation "Called after the each document update.")
@@ -392,6 +416,9 @@ Second line
         ((string= change-type
                   "maybe-delete-block")
          (maybe-delete-block document path))
+        ((string= change-type
+                  "start-new-paragraph")
+         (start-new-paragraph document path))
         (t
          (process-usual-update document path new-html cursor-position)))
 

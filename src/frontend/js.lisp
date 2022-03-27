@@ -529,6 +529,15 @@
 
       (defun make-code-block-keymap ()
         (list
+         (create :name "Option+Enter"
+                 :predicate
+                 (lambda (event)
+                   (and (= (@ event key)
+                           "Enter")
+                        (@ event alt-key)))
+                 :func
+                 (lambda (event)
+                   (change-text event "start-new-paragraph")))
          (create :name "Enter"
                  :predicate
                  (lambda (event)
