@@ -31,18 +31,57 @@
         result)))
 
 
+(defun replace-scriba-nodes-with-tmp-placeholders (text)
+  (let ((current-id 0)
+        (pieces (make-hash-table :test 'equal)))
+    (values
+     (cl-ppcre:regex-replace-all "@[^ ]+(\\[[^]]*\\])?\\([^)]*\\)" text
+                                 (lambda (text start end match-start match-end &rest rest)
+                                   (declare (ignore start end rest))
+                                   (let* ((matched (subseq text match-start match-end))
+                                          (id (incf current-id))
+                                          (replacement (format nil "SCRIBA-NODE-~A" id)))
+                                     (setf (gethash replacement pieces)
+                                           matched)
+                                     replacement)))
+     pieces)))
+
+
+(defun replace-placeholders-with-scriba-nodes (text pieces)
+  "Makes opposite to REPLACE-SCRIBA-NODES-WITH-TMP-PLACEHOLDERS."
+  (cl-ppcre:regex-replace-all "SCRIBA-NODE-[0-9]+" text
+                              (lambda (text start end match-start match-end &rest rest)
+                                (declare (ignore start end rest))
+                                (let* ((matched (subseq text match-start match-end))
+                                       (scriba-node (gethash matched pieces)))
+                                  (unless scriba-node
+                                    (error "Unable to find Scriba node for placeholder ~S." matched))
+                                  scriba-node))))
+
+
 (defun from-markdown (text)
-  (let ((node (common-doc.format:parse-document (make-instance 'commondoc-markdown:markdown)
-                                                text)))
-    ;; This is a workaround for a bug inside commondoc-markdown or 3bmd
-    ;; When it parses an empty text, it returns an empty CONTENT-NODE,
-    ;; But we need a PARAGRAPH.
-    (cond
-      ((and (typep node 'common-doc:content-node)
-            (null (common-doc:children node)))
-       (common-doc:make-paragraph
-        (list
-         ;; Without this hack with &ZeroWidthSpace;
-         ;; we'll be unable to put cursor into a new paragraph :(
-         (common-doc:make-text reblocks-text-editor/utils/text::+zero-width-space+))))
-      (t node))))
+  ;; We need this hack with Scriba nodes replacement because
+  ;; otherwise markdown parser will replace nodes like @some[ref=dsd]() with
+  ;; a web-link.
+  (multiple-value-bind (text-without-scriba-nodes scriba-nodes)
+      (replace-scriba-nodes-with-tmp-placeholders text)
+    (let ((node (common-doc.format:parse-document (make-instance 'commondoc-markdown:markdown)
+                                                  text-without-scriba-nodes)))
+      (common-doc.ops:with-document-traversal (node current-node)
+        (when (typep current-node 'common-doc:text-node)
+          (let ((text (common-doc:text current-node)))
+            (setf (common-doc:text current-node)
+                  (replace-placeholders-with-scriba-nodes text scriba-nodes)))))
+      
+      ;; This is a workaround for a bug inside commondoc-markdown or 3bmd
+      ;; When it parses an empty text, it returns an empty CONTENT-NODE,
+      ;; But we need a PARAGRAPH.
+      (cond
+        ((and (typep node 'common-doc:content-node)
+              (null (common-doc:children node)))
+         (common-doc:make-paragraph
+          (list
+           ;; Without this hack with &ZeroWidthSpace;
+           ;; we'll be unable to put cursor into a new paragraph :(
+           (common-doc:make-text reblocks-text-editor/utils/text::+zero-width-space+))))
+        (t node)))))

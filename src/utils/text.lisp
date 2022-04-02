@@ -25,7 +25,45 @@
                                  ""))))
 
 
+(defun %remove-tags (html-string)
+  (with-output-to-string (s)
+    (plump:traverse (plump:parse html-string)
+                    (lambda (node)
+                      (let* ((class-attr (when (plump:element-p node)
+                                           (plump:attribute node "class")))
+                             (id (when (plump:element-p node)
+                                   (plump:attribute node "id")))
+                             (classes (when class-attr
+                                        (str:split #\Space class-attr)) ))
+                        (cond
+                          ((plump:text-node-p node)
+                           (write-string (plump:text node) s))
+                          ((and (member "noneditable" classes
+                                        :test #'string=)
+                                id)
+                           (format s "@placeholder[ref=~A]()"
+                                   id))))))))
+
+
 (defun remove-html-tags (html-string &key (remove-new-lines t))
+  (let* ((result (%remove-tags html-string)
+                 ;; (cl-ppcre:regex-replace-all "<[^>]+>" html-string
+                 ;;                             "")
+                 )
+         (result (remove-zero-spaces-unless-string-is-empty result))
+         ;; TODO: check if we still need this:
+         (result (plump:decode-entities result))
+         (result (if remove-new-lines
+                     ;; For some strange reason sometimes browser starts
+                     ;; passing newlines even inside span elements. Why? Don't know.
+                     ;; Thus by default we are removing new lines.
+                     ;; However, when processing content of code blocks
+                     ;; it is useful to keep newlines.
+                     (str:replace-all '(#\Newline) "" result)
+                     result)))
+    result))
+
+(defun remove-html-tags-old (html-string &key (remove-new-lines t))
   (let* ((result (cl-ppcre:regex-replace-all "<[^>]+>" html-string
                                              ""))
          (result (remove-zero-spaces-unless-string-is-empty result))

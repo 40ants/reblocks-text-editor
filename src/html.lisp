@@ -51,18 +51,19 @@
 
 (defmethod to-html ((node common-doc:content-node))
   (let* ((node-type (class-of node))
-         (tag (or (loop for key being the hash-key of common-doc::*registry*
-                          using (hash-value value)
-                        when (eql value node-type)
-                          do (return (or (alexandria:assoc-value *common-doc-key-to-html-tag* key
-                                                                 :test #'string-equal)
-                                         key)))
-                  "div")))
+         (tag (loop for key being the hash-key of common-doc::*registry*
+                      using (hash-value value)
+                    when (eql value node-type)
+                      do (return (or (alexandria:assoc-value *common-doc-key-to-html-tag* key
+                                                             :test #'string-equal)
+                                     key)))))
     (reblocks/html:with-html
-      ;; TODO: add a check that there is no nodes prohibited as a span's content
-      (:tag :name tag
-            :id (common-doc:reference node)
-            (to-html (common-doc:children node))))))
+      (if tag
+          (:tag :name tag
+                :id (common-doc:reference node)
+                (to-html (common-doc:children node)))
+          ;; by default, content node has no HTML representation
+          (to-html (common-doc:children node))))))
 
 (defmethod to-html ((node common-doc:unordered-list))
   (reblocks/html:with-html
@@ -114,14 +115,6 @@
             ;;        )
             (:code (mapc #'to-html (uiop:ensure-list
                                     (common-doc:children node))))))))
-
-
-(defmethod to-html ((node common-doc:image))
-  (reblocks/html:with-html
-    (:img :id (common-doc:reference node)
-          :class (html-class node)
-          :src (common-doc:source node)
-          :title (common-doc:description node))))
 
 
 (defmethod to-html ((node commondoc-markdown/raw-html:raw-inline-html))

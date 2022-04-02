@@ -108,6 +108,17 @@
                (element
                  (chain document
                         (get-element-by-id element-id)))
+               (element-non-editable
+                 (chain element
+                        class-list
+                        (contains "noneditable")))
+               (element-to-select (if element-non-editable
+                                      element
+                                      ;; Selecting the first text node
+                                      ;; inside the element:
+                                      (@ element
+                                         child-nodes
+                                         0)))
                (range (chain document (create-range)))
                (sel (chain window (get-selection))))
 
@@ -115,9 +126,7 @@
             (element
              (chain range
                     (set-start
-                     (@ element
-                        child-nodes
-                        0)
+                     element-to-select
                      (if from-the-end
                          (- (chain element
                                    inner-text

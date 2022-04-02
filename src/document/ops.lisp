@@ -21,6 +21,10 @@
                 #:length<
                 #:length>
                 #:slice)
+  (:import-from #:common-doc.ops
+                #:with-document-traversal)
+  (:import-from #:reblocks-text-editor/blocks/placeholder
+                #:placeholder)
   (:local-nicknames (#:dom #:reblocks-text-editor/dom/ops)))
 (in-package #:reblocks-text-editor/document/ops)
 
@@ -180,6 +184,8 @@
                        (error "Probably we should't get here.")))))
                  (common-doc:image
                   ;; Just skip it
+                  (setf last-visited-node-content-length
+                        0)
                   node))))
      
       (recursive-find node)
@@ -364,7 +370,7 @@
              (text-after-cursor (subseq plain-text (min cursor-position
                                                         (length plain-text))))
              (new-paragraph (prepare-new-content document text-after-cursor)))
-
+        
         (cond
           ((and
             ;; When user presses Option + Enter, we want to stay within
@@ -642,6 +648,7 @@
   "Parses text-nodes inside the tree as a scriba documents."
   (flet ((parse (node depth)
            (declare (ignore depth))
+           (log:error "TRAEA" node)
            (typecase node
              (common-doc:text-node
               (let* ((text (common-doc:text node))
@@ -655,15 +662,21 @@
                   ((length= 0 content)
                    node)
                   ((length= 1 content)
-                
-                   ;; If there we were able to split text into separate
-                   ;; nodes, then return them as a single content-node
-                   (let ((content-node (first content)))
-                     (if (and (typep content-node 'node-with-children)
-                              (serapeum:length< 1 (common-doc:children content-node)))
-                         content-node
-                         ;; otherwise just return original text node
-                         node)))
+
+                   ;; Previously here was used this code, but
+                   ;; I decided just return the first item
+                   ;; because sometimes content might be a single @placeholder
+                   ;; node when there is image or something like that is on the line.
+                   ;; 
+                   ;; ;; If there we were able to split text into separate
+                   ;; ;; nodes, then return them as a single content-node
+                   ;; (let ((content-node (first content)))
+                   ;;   (if (and (typep content-node 'node-with-children)
+                   ;;            (serapeum:length< 1 (common-doc:children content-node)))
+                   ;;       content-node
+                   ;;       ;; otherwise just return original text node
+                   ;;       node))
+                   (first content))
                   (t
                    (error "Why does content has more than one node? This is unexpected.")))))
              (t node))))
@@ -682,6 +695,35 @@
 ;;     (map-document root-node #'parse)))
 
 
+(defun replace-placeholders (editable-document root-node)
+  "Replaces PLACEHOLDER nodes inside the nodes tree starting from ROOT-NODE.
+
+   Usually ROOT-NODE will point to a new nodes, created from the current
+   paragraph, modified by a user.
+
+   Whereas EDITABLE-DOCUMENT is a full document. Replacements are
+   collected from the EDITABLE-DOCUMENT and matched to a placeholder by reference."
+
+  (let ((id-to-node (make-hash-table :test 'equal)))
+    (with-document-traversal (editable-document node)
+      (setf (gethash (common-doc:reference node) id-to-node)
+            node))
+
+    (map-document
+     root-node
+     (lambda (node depth)
+       (declare (ignore depth))
+       (cond
+         ((typep node 'placeholder)
+          (let* ((id (common-doc:reference node))
+                 (replacement (gethash id id-to-node)))
+            (unless replacement
+              (error "Unable to find node to replace placeholder with id: ~S" id))
+            replacement))
+         (t
+          node))))))
+
+
 (defun prepare-new-content (document text)
   (let ((node
           (cond
@@ -689,8 +731,10 @@
              (common-doc:make-code-block nil
                                          (common-doc:make-text +zero-width-space+)))
             (t
-             (parse-scriba-nodes
-              (from-markdown text))))))
+             (replace-placeholders
+              document
+              (parse-scriba-nodes
+               (from-markdown text)))))))
     (add-reference-ids document
                        :to-node node)))
 
@@ -830,7 +874,8 @@
                              caret-position)
     (cond
       (node
-       (dom::move-cursor node new-caret-position :from-the-end from-the-end)
+       (dom::move-cursor node new-caret-position
+                         :from-the-end from-the-end)
        (setf (caret-position document)
              (list node new-caret-position)))
       (t
