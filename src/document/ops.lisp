@@ -317,6 +317,10 @@
            (check-type previous-paragraph common-doc:paragraph)
            
            (let* ((first-part (reblocks-text-editor/utils/markdown::to-markdown previous-paragraph))
+                  ;; Here it is important to calculate length of nodes,
+                  ;; not it's text representation, because we can have noneditable
+                  ;; nodes there, replaced by placeholders:
+                  (first-part-length (node-length previous-paragraph))
                   (full-text (concatenate 'string
                                           first-part
                                           text-to-append)))
@@ -329,7 +333,7 @@
                                                 ;; somewhere in the middle of the new
                                                 ;; paragraph. Right at the end of the
                                                 ;; paragraph, we've joined our current one:
-                                                (length first-part))))
+                                                first-part-length)))
           ;; Here we have no an another paragraph before the current
           ;; one and also, we are in the first list item.
           ;; In this case, we want to extract the whole content
@@ -373,17 +377,81 @@
   (length= 1 (member node (children container))))
 
 
+(defgeneric node-length (node)
+  (:method ((node common-doc:text-node))
+    (length (common-doc:text node)))
+  
+  (:method ((node common-doc:content-node))
+    (loop for child in (children node)
+          sum (node-length child)))
+  
+  (:method ((node common-doc:image))
+    1))
+
+
+(defgeneric split-node (node caret-position)
+  (:method ((node common-doc:text-node) (caret-position integer))
+    (let ((text (common-doc:text node)))
+      (list (common-doc:make-text (subseq text 0 (min caret-position
+                                                      (1- (length text)))))
+            (common-doc:make-text (subseq text (min caret-position
+                                                    (1- (length text))))))))
+  (:method ((node common-doc:content-node) (caret-position integer))
+    (destructuring-bind (left right)
+        (split-nodes (children node) caret-position)
+      ;; Here we are using metacopy to copy all node
+      ;; slots into two parts
+      (let ((left-node (metacopy:copy-thing node))
+            (right-node (metacopy:copy-thing node)))
+        (setf (children left-node)
+              left
+              (common-doc:reference left-node)
+              nil)
+        (setf (children right-node)
+              right
+              (common-doc:reference right-node)
+              nil)
+        (list left-node
+              right-node)))))
+
+
+(defun split-nodes (nodes caret-position)
+  "Returns two lists where first contains nodes before CARET-POSTION
+   and second all nodes after CARET-POSITION.
+
+   If CARET-POSITION points to a text node, it will be splitten into two.
+
+   Some nodes in the results might have NIL reference in case
+   if original node was splitted in two parts."
+  (multiple-value-list
+   (uiop:while-collecting (collect-left collect-right)
+     (loop with prev-node-length = 0
+           for node in nodes
+           for node-length = (node-length node)
+           for current-caret = caret-position
+             then (- current-caret prev-node-length)
+           do (setf prev-node-length node-length)
+              ;; (format t "node: ~A current-caret: ~A~%"
+              ;;         node
+              ;;         current-caret)
+           if (>= current-caret node-length)
+             do (collect-left node)
+           if (< 0 current-caret node-length)
+             do (destructuring-bind (left right)
+                    (split-node node current-caret)
+                  (collect-left left)
+                  (collect-right right))
+           if (<= current-caret 0)
+             do (collect-right node)))))
+
+
 (defun split-paragraph (document path new-html cursor-position &key dont-escape-from-list-item)
   (let ((changed-paragraph (find-changed-node document path)))
     (when changed-paragraph
       (let* ((plain-text (reblocks-text-editor/utils/text::remove-html-tags new-html))
-             ;; (previous-node (find-previous-sibling document changed-paragraph))
-             (text-before-cursor (subseq plain-text 0 (min cursor-position
-                                                           (length plain-text))))
-             (text-after-cursor (subseq plain-text (min cursor-position
-                                                        (length plain-text))))
-             (new-paragraph (prepare-new-content document text-after-cursor)))
-        
+             (paragraph (prepare-new-content document plain-text))
+             (nodes (flatten-nodes paragraph)))
+
         (cond
           ((and
             ;; When user presses Option + Enter, we want to stay within
@@ -408,15 +476,26 @@
                                                 changed-paragraph
                                                 0)))
           (t
-           (update-node-content document changed-paragraph text-before-cursor cursor-position)
-           (insert-node document
-                        new-paragraph
-                        :relative-to changed-paragraph)
-           (ensure-cursor-position-is-correct document
-                                              new-paragraph
-                                              ;; When newline is inserted
-                                              ;; the cursor will be at the beginning
-                                              0)))))))
+           (destructuring-bind (nodes-before nodes-after)
+               (split-nodes nodes cursor-position)
+             (let ((new-paragraph (common-doc:make-paragraph nodes-after)))
+               (loop for node in nodes-before
+                     do (add-reference-ids document
+                                           :to-node node))
+              
+               (add-reference-ids document
+                                  :to-node new-paragraph)
+
+               (update-node-content document changed-paragraph nodes-before cursor-position)
+               (insert-node document
+                            new-paragraph
+                            :relative-to changed-paragraph)
+               
+               (ensure-cursor-position-is-correct document
+                                                  new-paragraph
+                                                  ;; When newline is inserted
+                                                  ;; the cursor will be at the beginning
+                                                  0)))))))))
 
 
 (defun empty-text-node (node)
@@ -665,7 +744,8 @@
    return a (list A B C)."
 
   (loop for node in nodes
-        if (typep node 'node-with-children)
+        if (and (typep node 'node-with-children)
+                (not (typep node 'common-doc:markup)))
           append (apply #'flatten-nodes
                         (children node))
         else

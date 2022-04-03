@@ -1,10 +1,12 @@
 (uiop:define-package #:reblocks-text-editor-tests/document/ops
   (:use #:cl)
   (:import-from #:rove
+                #:testing
                 #:deftest
                 #:ok)
   (:import-from #:hamcrest)
   (:import-from #:hamcrest/rove
+                #:has-type
                 #:contains
                 #:has-slots
                 #:assert-that)
@@ -20,6 +22,7 @@
   (:import-from #:alexandria
                 #:length=)
   (:import-from #:reblocks-text-editor/document/ops
+                #:split-nodes
                 #:flatten-nodes
                 #:map-document
                 #:prepare-new-content
@@ -27,7 +30,9 @@
                 #:find-next-paragraph
                 #:update-node-content)
   (:import-from #:reblocks-text-editor/utils/markdown
-                #:to-markdown))
+                #:to-markdown)
+  (:import-from #:hamcrest/matchers
+                #:has-all))
 (in-package #:reblocks-text-editor-tests/document/ops)
 
 
@@ -363,3 +368,75 @@ Third."))
     ;; Checking the result
     (assert-that result
                  (contains foo blah minor bar))))
+
+
+
+(deftest test-split-text-nodes ()
+  (let ((nodes (list (make-text "foo")
+                     (make-text "bar")
+                     (make-text "blah"))))
+    (testing "When caret is at the end"
+      (assert-that (split-nodes nodes 10)
+                   (contains
+                    (contains (has-slots 'common-doc:text "foo")
+                              (has-slots 'common-doc:text "bar")
+                              (has-slots 'common-doc:text "blah"))
+                    ;; The second list should be empty, because
+                    ;; caret is at the end:
+                    (hamcrest/rove:has-length 0))))
+    
+    (testing "When caret is at the beginning"
+      (assert-that (split-nodes nodes 0)
+                   (contains
+                    ;; The first list should be empty, because
+                    ;; caret is at the beginning:
+                    (hamcrest/rove:has-length 0)
+                    (contains (has-slots 'common-doc:text "foo")
+                              (has-slots 'common-doc:text "bar")
+                              (has-slots 'common-doc:text "blah")))))
+    (testing "When caret is at the middle of \"blah\""
+      (assert-that (split-nodes nodes 7)
+                   (contains
+                    (contains (has-slots 'common-doc:text "foo")
+                              (has-slots 'common-doc:text "bar")
+                              (has-slots 'common-doc:text "b"))
+                    (contains (has-slots 'common-doc:text "lah")))))))
+
+
+(deftest test-split-text-nodes-with-markup ()
+  (let ((nodes (list (make-text "foo")
+                     (make-text "bar")
+                     (common-doc:make-bold
+                      (list
+                       (common-doc:make-italic
+                        (make-text "blah"))
+                       (make-text "minor"))))))
+    (testing "When caret is at the end"
+      (destructuring-bind (left right)
+          (split-nodes nodes 7)
+        (assert-that left
+                     (contains (has-slots 'common-doc:text "foo")
+                               (has-slots 'common-doc:text "bar")
+                               (has-all
+                                (has-type 'common-doc:bold)
+                                (has-slots 'common-doc:children
+                                           (contains
+                                            (has-all
+                                             (has-type 'common-doc:italic)
+                                             (has-slots 'common-doc:children
+                                                        (contains
+                                                         (has-slots 'common-doc:text "b")))))))))
+        (assert-that right
+                     (contains (has-all
+                                (has-type 'common-doc:bold)
+                                (has-slots 'common-doc:children
+                                           (contains
+                                            (has-all
+                                             (has-type 'common-doc:italic)
+                                             (has-slots 'common-doc:children
+                                                        (contains
+                                                         (has-slots 'common-doc:text "lah"))))
+                                            (has-all
+                                             (has-type 'common-doc:text-node)
+                                             (has-slots 'common-doc:text "minor")))))))))))
+
