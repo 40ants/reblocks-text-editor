@@ -104,7 +104,7 @@ Second line
        (let ((plain-text (remove-html-tags
                           new-html
                           :remove-new-lines (not (typep node 'common-doc:code-block)))))
-         (log:debug "Updating node content at" path)
+         (log:debug "Updating node content at" path plain-text)
          (multiple-value-bind (current-node new-cursor-position)
              (reblocks-text-editor/document/ops::update-node-content
               document node plain-text cursor-position)

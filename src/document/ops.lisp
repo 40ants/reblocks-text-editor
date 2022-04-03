@@ -848,6 +848,24 @@
   (:documentation "Deletes a node from container"))
 
 
+(defun guess-caret-position-decrement (content caret-position)
+  "Returns a number of symbols, which will disappear if some content
+   in the CONTENT string will be replaced by a noneditable block
+   like an image."
+  (check-type content string)
+  (check-type caret-position integer)
+  (destructuring-bind (&optional left right)
+      (cl-ppcre:all-matches "!\\[[^]]*\\]\\([^)]*\\)" content
+                            :end caret-position)
+    (when (and left right)
+      (return-from guess-caret-position-decrement
+        ;; Image was inserted and image node has length of 1
+        ;; that is why we are making 1- here
+        (1- (- right left)))))
+
+  ;; If nothing matched:
+  0)
+
 ;; TODO: decide what to do with replace-node-content function
 ;; because now it is easy to misuse these two functions
 (defgeneric update-node-content (document node new-content cursor-position)
@@ -871,7 +889,17 @@
       (string
        (update-node-content document node
                             (prepare-new-content document new-content)
-                            cursor-position))
+                            ;; When are replacing text entered by a user
+                            ;; with a noneditable node like image,
+                            ;; caret position should be decreased to the
+                            ;; length of this entered text, because now
+                            ;; we are removing it from the editable area.
+                            ;; 
+                            ;; Here we are using a hack to guess how many
+                            ;; characters was removed by PREPARE-NEW-CONTENT:
+                            (- cursor-position
+                               (guess-caret-position-decrement new-content
+                                                               cursor-position))))
       (common-doc:code-block
        (replace-node document
                      node
