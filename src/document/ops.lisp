@@ -192,9 +192,13 @@
                       (t
                        (error "Probably we should't get here.")))))
                  (common-doc:image
-                  ;; Just skip it
+                  ;; We consider image has 1 character width,
+                  ;; because it requires one arrow left or right hit to move
+                  ;; cursor from one side of the image to another:
                   (setf last-visited-node-content-length
-                        0)
+                        1)
+                  (decf current-cursor-position
+                        last-visited-node-content-length)
                   node))))
      
       (recursive-find node)

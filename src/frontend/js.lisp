@@ -327,18 +327,35 @@
                                    (get-range-at 0)))
                    (range-2 (chain range-1
                                    (clone-range))))
-              (chain console
-                     (log "Current selection"
-                          selection))
-              
+              ;; (chain console
+              ;;        (log "Current selection"
+              ;;             selection))
+              ;; (chain console
+              ;;        (log "Current paragraph"
+              ;;             paragraph))
               (chain range-2
                      (select-node-contents paragraph))
+              
               (chain range-2
                      (set-end (@ range-1 end-container)
                               (@ range-1 end-offset)))
-              (chain range-2
-                     (to-string)
-                     length)))))
+              ;; (chain console
+              ;;        (log "Current range2"
+              ;;             range-2))
+              (let* ((fragment (chain range-2
+                                      (clone-contents)))
+                     (num-noneditables
+                       (loop for node in (chain fragment
+                                                (query-selector-all "*") )
+                             for class-list = (@ node class-list)
+                             when (and class-list
+                                       (chain class-list
+                                              (contains "noneditable")))
+                               summing 1)))
+                (+ (chain range-2
+                          (to-string)
+                          length)
+                   num-noneditables))))))
       
       (defun calculate-path ()
         "Returns a #ids of the currently selected node and all its parents,
