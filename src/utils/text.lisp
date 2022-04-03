@@ -190,3 +190,10 @@
         (- caret-position newline-pos 1)
         ;; We are at the first line:
         caret-position)))
+
+
+(defun num-hanging-spaces (text)
+  (loop for idx from (1- (length text)) downto 0
+        for char = (aref text idx)
+        while (char= char #\Space)
+        summing 1))

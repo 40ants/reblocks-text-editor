@@ -7,6 +7,7 @@
                 #:from-markdown
                 #:to-markdown)
   (:import-from #:reblocks-text-editor/utils/text
+                #:num-hanging-spaces
                 #:ensure-two-newlines-at-the-end
                 #:remove-zero-spaces-unless-string-is-empty
                 #:+zero-width-space+)
@@ -40,10 +41,15 @@
     (when (eql possibly-new-node cnode)
       (setf (children cnode)
             (loop for child in (children cnode)
-                  unless (reblocks-text-editor/html/markup::markup-p child)
-                    collect (map-document child function
-                                          (1+ depth)
-                                          make-bindings))))
+                  for new-child = (unless (reblocks-text-editor/html/markup::markup-p child)
+                                    (map-document child function
+                                                  (1+ depth)
+                                                  make-bindings))
+                  ;; Mapper might return a list to replace current node with a multiple nodes
+                  if (typep new-child 'list)
+                    append new-child
+                  else
+                    collect new-child)))
     (values possibly-new-node)))
 
 
@@ -55,7 +61,10 @@
 
                    The function should return the same node or the new one.
                    If a new node was returned, the function will not
-                   be applied to its content.")
+                   be applied to its content.
+
+                   Also, function might return a list to replace current node
+                   with a multiple nodes.")
 
   (:method :around (doc function &optional (depth 0) make-bindings)
     (multiple-value-bind (vars vals)
@@ -190,7 +199,7 @@
      
       (recursive-find node)
       (values last-visited-node
-              last-visited-node-content-length))))
+              current-cursor-position))))
 
 
 (defun select-outer-node-of-type (root-node node searched-type)
@@ -644,42 +653,49 @@
     (values to-node)))
 
 
+(defun flatten-nodes (&rest nodes)
+  "Returns a single list of nodes, unwrapping all content nodes.
+
+   For example, if we have a paragraph with text node A and a content-node,
+   where content node have two other nodes B and C, FLATTEN-NODES will
+   return a (list A B C)."
+
+  (loop for node in nodes
+        if (typep node 'node-with-children)
+          append (apply #'flatten-nodes
+                        (children node))
+        else
+          collect node))
+
+
 (defun parse-scriba-nodes (root-node &aux (format (make-instance 'scriba:scriba)))
   "Parses text-nodes inside the tree as a scriba documents."
   (flet ((parse (node depth)
            (declare (ignore depth))
-           (log:error "TRAEA" node)
            (typecase node
              (common-doc:text-node
               (let* ((text (common-doc:text node))
                      ;; TODO: ignore only ESRAP:ESRAP-PARSE-ERROR here
                      (doc (ignore-errors
                            (common-doc.format:parse-document format
-                                                             text)))
-                     (content (when doc
-                                (common-doc:children doc))))
+                                                             text))))
                 (cond
-                  ((length= 0 content)
-                   node)
-                  ((length= 1 content)
-
-                   ;; Previously here was used this code, but
-                   ;; I decided just return the first item
-                   ;; because sometimes content might be a single @placeholder
-                   ;; node when there is image or something like that is on the line.
-                   ;; 
-                   ;; ;; If there we were able to split text into separate
-                   ;; ;; nodes, then return them as a single content-node
-                   ;; (let ((content-node (first content)))
-                   ;;   (if (and (typep content-node 'node-with-children)
-                   ;;            (serapeum:length< 1 (common-doc:children content-node)))
-                   ;;       content-node
-                   ;;       ;; otherwise just return original text node
-                   ;;       node))
-                   (first content))
-                  (t
-                   (error "Why does content has more than one node? This is unexpected.")))))
-             (t node))))
+                  (doc
+                   (let* ((new-nodes (when doc
+                                       (apply #'flatten-nodes (children doc))))
+                          (last-node (car (last new-nodes))))
+                     ;; Scriba parser "eats" hanging spaces if last node
+                     ;; is not a TEXT-NOD
+                     (unless (typep last-node 'common-doc:text-node)
+                       (setf new-nodes
+                             (append new-nodes
+                                     (list (common-doc:make-text
+                                            (str:repeat (num-hanging-spaces text)
+                                                        " "))))))
+                     new-nodes))
+                  (t node))))
+             (t
+              node))))
     (map-document root-node #'parse)))
 
 
@@ -731,10 +747,11 @@
              (common-doc:make-code-block nil
                                          (common-doc:make-text +zero-width-space+)))
             (t
-             (replace-placeholders
-              document
-              (parse-scriba-nodes
-               (from-markdown text)))))))
+             (let* ((parsed-markdown (from-markdown text))
+                    (with-scriba-nodes (parse-scriba-nodes parsed-markdown)))
+               (replace-placeholders
+                document
+                with-scriba-nodes))))))
     (add-reference-ids document
                        :to-node node)))
 
@@ -1012,6 +1029,14 @@
              ((typep current-node 'common-doc:list-item)
               (let ((children (common-doc:children current-node)))
                 (cond
+                  ;; If node is empty, then we just add an empty paragraph:
+                  ((null children)
+                   (common-doc:make-list-item
+                    (common-doc:make-paragraph
+                     (list (common-doc:make-text
+                            reblocks-text-editor/utils/text::+zero-width-space+)))
+                    :metadata (common-doc:metadata current-node)
+                    :reference (common-doc:reference current-node)))
                   ((and children
                         (not
                          (typep (first children)
@@ -1021,7 +1046,8 @@
                      children)
                     :metadata (common-doc:metadata current-node)
                     :reference (common-doc:reference current-node)))
-                  (t current-node))))
+                  (t
+                   current-node))))
              (t
               current-node))))
     (map-document document #'add-paragraph-if-needed)))

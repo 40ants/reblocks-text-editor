@@ -9,6 +9,7 @@
   (:import-from #:reblocks-text-editor/html/markdown-link)
   (:import-from #:reblocks-text-editor/html/web-link)
   (:import-from #:reblocks-text-editor/html/document-link)
+  (:import-from #:reblocks-text-editor/html/image)
   (:import-from #:reblocks-text-editor/frontend/js)
   (:import-from #:reblocks-text-editor/frontend/css)
   (:import-from #:reblocks-text-editor/document/copying)

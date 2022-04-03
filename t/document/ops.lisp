@@ -3,9 +3,15 @@
   (:import-from #:rove
                 #:deftest
                 #:ok)
+  (:import-from #:hamcrest)
+  (:import-from #:hamcrest/rove
+                #:contains
+                #:has-slots
+                #:assert-that)
   (:import-from #:reblocks-text-editor/editor
                 #:make-document-from-markdown-string)
   (:import-from #:common-doc
+                #:make-content
                 #:make-list-item
                 #:make-unordered-list
                 #:make-paragraph
@@ -14,6 +20,9 @@
   (:import-from #:alexandria
                 #:length=)
   (:import-from #:reblocks-text-editor/document/ops
+                #:flatten-nodes
+                #:map-document
+                #:prepare-new-content
                 #:find-previous-paragraph
                 #:find-next-paragraph
                 #:update-node-content)
@@ -262,3 +271,95 @@ Third."))
     (ok (equal (to-markdown (find-next-paragraph doc second))
                (to-markdown third)))
     (ok (null (find-next-paragraph doc third)))))
+
+
+(deftest test-prepare-new-content-with-space-after-placeholder
+  (let* ((image (common-doc:make-image "source-does-not-matter"))
+         (doc (make-instance 'reblocks-text-editor/document/editable::editable-document
+                             :children (list image))))
+    (reblocks-text-editor/document/ops::add-reference-ids doc)
+
+    ;; Just to be sure the reference was written into the image node:    
+    (ok (common-doc:reference image))
+    
+    (let* ((string (format nil "Ok@placeholder[ref=~A]() "
+                           (common-doc:reference image)))
+           (result (prepare-new-content doc
+                                        string)))
+      (ok (typep result 'common-doc:paragraph))
+      (let ((content (children result)))
+        (assert-that content
+                     (contains
+                      (has-slots 'common-doc:text
+                                 "Ok")
+                      (has-slots 'common-doc:source
+                                 "source-does-not-matter")
+                      (has-slots 'common-doc:text
+                                 " ")))))))
+
+
+(deftest test-prepare-new-content-when-there-is-no-markup
+  (let* ((doc (make-instance 'reblocks-text-editor/document/editable::editable-document)))
+    (reblocks-text-editor/document/ops::add-reference-ids doc)
+
+    (let* ((string "foo bar")
+           (result (prepare-new-content doc
+                                        string)))
+      (ok (typep result 'common-doc:paragraph))
+      (let ((content (children result)))
+        (assert-that content
+                     (contains
+                      (has-slots 'common-doc:text
+                                 "foo bar")))))))
+
+
+(deftest test-prepare-new-content-with-beginning-of-image-markup
+  (let* ((doc (make-instance 'reblocks-text-editor/document/editable::editable-document)))
+    (reblocks-text-editor/document/ops::add-reference-ids doc)
+
+    (let* ((string "![](")
+           (result (prepare-new-content doc
+                                        string)))
+      (ok (typep result 'common-doc:paragraph))
+      (let ((content (children result)))
+        (assert-that content
+                     (contains
+                      (has-slots 'common-doc:text
+                                 "![](")))))))
+
+
+(deftest test-map-document-is-able-to-replace-a-single-text-node-with-multiple
+  (let* ((foo (make-text "foo"))
+         (bar (make-text "bar"))
+         (baz (make-text "baz"))
+         (blah (make-text "blah"))
+         (minor (make-text "minor"))
+         (doc (make-instance 'reblocks-text-editor/document/editable::editable-document
+                             :children (list foo bar baz))))
+    ;; Now we'll try to replace "bar" node with two nodes "blah" and "minor"
+    (flet ((replace-bar (node depth)
+             (declare (ignore depth))
+             (if (eql node bar)
+                 (list blah minor)
+                 node)))
+      (map-document doc #'replace-bar))
+
+    ;; Checking the result
+    (assert-that doc
+                 (has-slots 'common-doc:children
+                            (contains foo blah minor baz)))))
+
+
+(deftest test-flatten-nodes
+  (let* ((foo (make-text "foo"))
+         (bar (make-text "bar"))
+         (blah (make-text "blah"))
+         (minor (make-text "minor"))
+         (root (make-paragraph 
+                (list foo
+                      (make-content (list blah minor))
+                      bar)))
+         (result (flatten-nodes root)))
+    ;; Checking the result
+    (assert-that result
+                 (contains foo blah minor bar))))
