@@ -478,6 +478,18 @@
           (t
            (destructuring-bind (nodes-before nodes-after)
                (split-nodes nodes cursor-position)
+
+             ;; We need to add zero width spaces because
+             ;; otherwise it will be impossible to set cursor
+             ;; into the paragraphs:
+             (unless nodes-before
+               (push (common-doc:make-text +zero-width-space+)
+                     nodes-before))
+             
+             (unless nodes-after
+               (push (common-doc:make-text +zero-width-space+)
+                     nodes-after))
+             
              (let ((new-paragraph (common-doc:make-paragraph nodes-after)))
                (loop for node in nodes-before
                      do (add-reference-ids document
@@ -490,7 +502,7 @@
                (insert-node document
                             new-paragraph
                             :relative-to changed-paragraph)
-               
+
                (ensure-cursor-position-is-correct document
                                                   new-paragraph
                                                   ;; When newline is inserted
@@ -520,17 +532,29 @@
            (text-after-cursor (slice plain-text cursor-position))
            (nodes-before (common-doc:children (prepare-new-content document text-before-cursor)))
            (nodes-after (common-doc:children (prepare-new-content document text-after-cursor)))
-           (new-nodes (append nodes-before
-                              (list new-content)
-                              nodes-after))
+           (node-for-cursor (common-doc:make-text reblocks-text-editor/utils/text::+zero-width-space+))
            ;; Before update, we need to remove "empty" text nodes having only
            ;; zero white-space. Otherwise, after the following text editing operation
            ;; cursor will be moved to incorrect position, jumping one additional
            ;; character to the right.
-           (new-nodes (remove-if #'empty-text-node new-nodes)))
+           ;; NOTE: Previously I've removed empty nodes from whole new-nodes, including
+           ;; new-content. But changed this when added images editing.
+           (new-nodes (append
+                       (remove-if #'empty-text-node nodes-before)
+                       (list new-content
+                             node-for-cursor)
+                       (remove-if #'empty-text-node nodes-after))))
+
+      (add-reference-ids document :to-node node-for-cursor)
 
       (update-node-content document node new-nodes cursor-position)
-      (place-cursor-after-the document new-content))))
+      (ensure-cursor-position-is-correct document
+                                         node-for-cursor
+                                         0
+                                         ;; :from-the-end t
+                                         )
+      ;; (place-cursor-after-the document new-content)
+      )))
 
 
 (defun append-children (widget to-node nodes-to-append)
@@ -856,7 +880,8 @@
   (check-type caret-position integer)
   (destructuring-bind (&optional left right)
       (cl-ppcre:all-matches "!\\[[^]]*\\]\\([^)]*\\)" content
-                            :end caret-position)
+                            :end (min caret-position
+                                      (length content)))
     (when (and left right)
       (return-from guess-caret-position-decrement
         ;; Image was inserted and image node has length of 1
@@ -887,19 +912,35 @@
 
     (etypecase new-content
       (string
-       (update-node-content document node
-                            (prepare-new-content document new-content)
-                            ;; When are replacing text entered by a user
-                            ;; with a noneditable node like image,
-                            ;; caret position should be decreased to the
-                            ;; length of this entered text, because now
-                            ;; we are removing it from the editable area.
-                            ;; 
-                            ;; Here we are using a hack to guess how many
-                            ;; characters was removed by PREPARE-NEW-CONTENT:
-                            (- cursor-position
-                               (guess-caret-position-decrement new-content
-                                                               cursor-position))))
+       (let* ((cursor-position-decrement
+                (guess-caret-position-decrement new-content
+                                                cursor-position))
+              (processed-content
+                (prepare-new-content document new-content))
+              (children (children processed-content))
+              (last-child (car (last children))))
+         
+         (when (typep last-child 'common-doc:image)
+           (let ((empty-node (common-doc:make-text +zero-width-space+)))
+             (add-reference-ids document
+                                :to-node empty-node)
+             (setf (children processed-content)
+                   (append (children processed-content)
+                           (list empty-node))))
+           (decf cursor-position-decrement))
+         
+         (update-node-content document node
+                              processed-content
+                              ;; When are replacing text entered by a user
+                              ;; with a noneditable node like image,
+                              ;; caret position should be decreased to the
+                              ;; length of this entered text, because now
+                              ;; we are removing it from the editable area.
+                              ;; 
+                              ;; Here we are using a hack to guess how many
+                              ;; characters was removed by PREPARE-NEW-CONTENT:
+                              (- cursor-position
+                                 cursor-position-decrement))))
       (common-doc:code-block
        (replace-node document
                      node
@@ -1002,6 +1043,17 @@
       (find-node-at-position changed-node
                              caret-position)
     (cond
+      (from-the-end
+       ;; Warning!
+       ;; 
+       ;; Here we don't use new-caret-position,
+       ;; because placing cursor to the end of the given
+       ;; node and usually we already know the correct
+       ;; node to place cursor to.
+       (dom::move-cursor changed-node caret-position
+                         :from-the-end from-the-end)
+       (setf (caret-position document)
+             (list changed-node caret-position)))
       (node
        (dom::move-cursor node new-caret-position
                          :from-the-end from-the-end)

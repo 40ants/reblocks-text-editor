@@ -28,7 +28,7 @@
                 #:lastcar
                 #:curry)
   (:import-from #:reblocks-text-editor/utils/http
-                #:retrieve-url-title)
+                #:retrieve-url-info)
   (:import-from #:serapeum
                 #:slice)
   (:import-from #:metacopy
@@ -197,12 +197,19 @@ Second line
           ;; We don't want to expand link when inserting
           ;; url after the text like "[some]("
           (not (cl-ppcre:all-matches "\\[[^]]*\\]\\($" text-before)))
-     (let* ((url pasted-text)
-            (title (or (retrieve-url-title url)
-                       url)))
-       (common-doc:make-web-link
-                      url
-                      (list (common-doc:make-text title)))))
+     (multiple-value-bind (title content-type)
+         (retrieve-url-info pasted-text)
+       (let* ((url pasted-text)
+              (title (or title url)))
+         (cond
+           ((and content-type
+                 (str:starts-with-p "image/"
+                                    content-type))
+            (common-doc:make-image pasted-text))
+           (t
+            (common-doc:make-web-link
+             url
+             (list (common-doc:make-text title))))))))
     (t
      (common-doc:make-text pasted-text))))
 
