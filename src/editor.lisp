@@ -44,6 +44,18 @@
 (in-package #:reblocks-text-editor/editor)
 
 
+(defvar *c-file*
+  *compile-file-pathname*)
+
+(defvar *c-file2*
+  #.*compile-file-pathname*)
+
+(defvar *l-file*
+  *load-pathname*)
+
+(defvar *l-file2*
+  #.*load-pathname*)
+
 (defun unwrap-content (node)
   "Returns a list of common doc node. If NODE is a common-doc:content-node,
    then it's children are returned wheren unwrap-content is applied to each
@@ -227,14 +239,25 @@ Second line
 
 
 (defmethod paste-text (document (node common-doc:paragraph) cursor-position pasted-text)
-  (let* ((text (to-markdown node
-                            ;; It is important to not trim a space,
-                            ;; otherwise a space before the cursor will be lost:
-                            :trim-spaces nil))
-         (text-before (slice text 0 cursor-position))
-         (new-content (make-node-from-pasted-text text-before pasted-text)))
-    (ops::insert-into-paragraph document node cursor-position
-                                new-content)))
+  (destructuring-bind (nodes-before nodes-after)
+      (ops::split-nodes (common-doc::children node) cursor-position)
+    (declare (ignore nodes-after))
+    (let* ((text-before (to-markdown (common-doc:make-content nodes-before)
+                                     ;; It is important to not trim a space,
+                                     ;; otherwise a space before the cursor will be lost:
+                                     :trim-spaces nil))
+           ;; Тут надо сначала поправить позицию курсора, потому что
+           ;; картинки которые перед ним, будут отрендерены в markdown как ![](someurl),
+           ;; а cursor-position прилетел с фронта, где под картинку выделяется 1 символ:
+           ;; Может сделать сначала сплит всех нод, а потом левую часть уже преобразовывать?
+           ;; (text-before (slice text 0 cursor-position))
+           (new-content (make-node-from-pasted-text text-before pasted-text))
+           ;; because nodes-before might include images which when rendered
+           ;; in markdown are bigger than 1 character
+           (new-cursor-position (length text-before)))
+      (ops::insert-into-paragraph document node
+                                  new-cursor-position
+                                  new-content))))
 
 
 (defmethod paste-text (document (node common-doc:code-block) caret-position pasted-text)

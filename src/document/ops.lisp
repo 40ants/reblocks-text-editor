@@ -776,7 +776,8 @@
           collect node))
 
 
-(defun parse-scriba-nodes (root-node &aux (format (make-instance 'scriba:scriba)))
+(defun parse-scriba-nodes (root-node ;; &aux (format (make-instance 'scriba:scriba))
+                           )
   "Parses text-nodes inside the tree as a scriba documents."
   (flet ((parse (node depth)
            (declare (ignore depth))
@@ -784,9 +785,8 @@
              (common-doc:text-node
               (let* ((text (common-doc:text node))
                      ;; TODO: ignore only ESRAP:ESRAP-PARSE-ERROR here
-                     (doc (ignore-errors
-                           (common-doc.format:parse-document format
-                                                             text))))
+                     ;; TODO: make this work with as parameter to common-doc scriba format object
+                     (doc (scriba::string-to-common-doc text :junk-allowed t)))
                 (cond
                   (doc
                    (let* ((new-nodes (when doc
@@ -872,24 +872,39 @@
   (:documentation "Deletes a node from container"))
 
 
+(defun decrement-of-placeholders-before-caret (content caret-position)
+  "Counts characters taken by text like \"Image попробуем в середине строки: @placeholder[ref=some]()\"
+   inside the CONTENT.
+   Returns sum of each placeholder minus number of placeholders, because
+   each noneditable object \"has\" length of 1 character."
+  (loop with matches = (cl-ppcre:all-matches "@placeholder\\[[^]]*\\]\\([^)]*\\)" content
+                                             :end (min caret-position
+                                                       (length content)))
+        for (left right) on matches by #'cddr
+        summing (- right left 1)))
+
+
 (defun guess-caret-position-decrement (content caret-position)
   "Returns a number of symbols, which will disappear if some content
    in the CONTENT string will be replaced by a noneditable block
    like an image."
   (check-type content string)
   (check-type caret-position integer)
-  (destructuring-bind (&optional left right)
-      (cl-ppcre:all-matches "!\\[[^]]*\\]\\([^)]*\\)" content
-                            :end (min caret-position
-                                      (length content)))
-    (when (and left right)
-      (return-from guess-caret-position-decrement
-        ;; Image was inserted and image node has length of 1
-        ;; that is why we are making 1- here
-        (1- (- right left)))))
+  (let ((placeholders-decrement
+          (decrement-of-placeholders-before-caret content caret-position)))
+    (destructuring-bind (&optional left right)
+        (cl-ppcre:all-matches "!\\[[^]]*\\]\\([^)]*\\)$" content
+                              :end (min caret-position
+                                        (length content)))
+      (when (and left right)
+        (return-from guess-caret-position-decrement
+          ;; Image was inserted and image node has length of 1
+          ;; that is why we are making 1- here
+          (+ (- right left 1)
+             placeholders-decrement))))
 
-  ;; If nothing matched:
-  0)
+    ;; If nothing matched:
+    placeholders-decrement))
 
 ;; TODO: decide what to do with replace-node-content function
 ;; because now it is easy to misuse these two functions
@@ -912,9 +927,9 @@
 
     (etypecase new-content
       (string
-       (let* ((cursor-position-decrement
-                (guess-caret-position-decrement new-content
-                                                cursor-position))
+       (let* ((cursor-position-decrement ;; 0
+                                         (guess-caret-position-decrement new-content
+                                                                         cursor-position))
               (processed-content
                 (prepare-new-content document new-content))
               (children (children processed-content))
@@ -928,7 +943,7 @@
                    (append (children processed-content)
                            (list empty-node))))
            (decf cursor-position-decrement))
-         
+
          (update-node-content document node
                               processed-content
                               ;; When are replacing text entered by a user

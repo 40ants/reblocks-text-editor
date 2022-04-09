@@ -22,6 +22,8 @@
   (:import-from #:alexandria
                 #:length=)
   (:import-from #:reblocks-text-editor/document/ops
+                #:parse-scriba-nodes
+                #:decrement-of-placeholders-before-caret
                 #:split-nodes
                 #:flatten-nodes
                 #:map-document
@@ -440,3 +442,23 @@ Third."))
                                              (has-type 'common-doc:text-node)
                                              (has-slots 'common-doc:text "minor")))))))))))
 
+
+
+(deftest test-decrement-by-placeholders
+  (let ((text "Image попробуем в середине строки: @placeholder[ref=some]() another text and @placeholder[ref=ba]() another placeholder."))
+    (let ((result (decrement-of-placeholders-before-caret text 60)))
+      (ok (= result 23)))
+    
+    (let ((result (decrement-of-placeholders-before-caret text 120)))
+      (ok (= result 44)))))
+
+
+
+(deftest test-scriba-nodes-parsing-should-ignore-incomplete-input
+  (let* ((node (make-text "Image: @placeholder[ref=el330]() another ![]("))
+         (result (parse-scriba-nodes node)))
+    (assert-that result
+                 (contains
+                  (has-slots 'common-doc:text "Image: ")
+                  (has-type 'reblocks-text-editor/blocks/placeholder::placeholder)
+                  (has-slots 'common-doc:text " another ![](")))))

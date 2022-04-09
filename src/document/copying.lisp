@@ -45,6 +45,9 @@
 (metacopy:defcopy-methods commondoc-markdown:markdown-link
   :copy-all t)
 
+(metacopy:defcopy-methods common-doc:image
+  :copy-all t)
+
 (metacopy:defcopy-methods common-doc:text-node
   :copy-all t)
 
