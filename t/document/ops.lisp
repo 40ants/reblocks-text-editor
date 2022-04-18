@@ -23,7 +23,6 @@
                 #:length=)
   (:import-from #:reblocks-text-editor/document/ops
                 #:parse-scriba-nodes
-                #:decrement-of-placeholders-before-caret
                 #:split-nodes
                 #:flatten-nodes
                 #:map-document
@@ -34,7 +33,13 @@
   (:import-from #:reblocks-text-editor/utils/markdown
                 #:to-markdown)
   (:import-from #:hamcrest/matchers
-                #:has-all))
+                #:has-all)
+  (:import-from #:reblocks-text-editor/typed-pieces/scribdown
+                #:make-scribdown-piece)
+  (:import-from #:reblocks-text-editor/typed-pieces/common-doc
+                #:make-common-doc-piece)
+  (:import-from #:reblocks-text-editor/typed-pieces/common-doc-impl
+                #:decrement-of-placeholders-before-caret))
 (in-package #:reblocks-text-editor-tests/document/ops)
 
 
@@ -59,37 +64,14 @@ First paragraph.
 Second paragraph."))
          (first-paragraph (first (children doc))))
 
-    (update-node-content  doc first-paragraph
-                          "New content."
-                          0)
+    (update-node-content doc
+                         first-paragraph
+                         (make-scribdown-piece "New content." 0))
     
     (ok (length= 2 (children doc)))
     (ok (equal (to-markdown
                 (first (children doc)))
                "New content."))
-    (ok (equal (to-markdown
-                (second (children doc)))
-               "Second paragraph."))))
-
-
-(deftest test-replacing-paragraph-content-with-a-list-of-inlines
-  (let* ((doc (make-document-from-markdown-string "
-First paragraph.
-
-Second paragraph."))
-         (first-paragraph (first (children doc)))
-         (new-content (list (make-text "Foo ")
-                            (common-doc:make-bold (make-text "Bar"))
-                            (make-text " Baz"))))
-
-    (update-node-content  doc first-paragraph
-                          new-content
-                          0)
-    
-    (ok (length= 2 (children doc)))
-    (ok (equal (to-markdown
-                (first (children doc)))
-               "Foo **Bar** Baz"))
     (ok (equal (to-markdown
                 (second (children doc)))
                "Second paragraph."))))
@@ -106,9 +88,9 @@ Second paragraph."))
                              (common-doc:make-bold (make-text "Bar"))
                              (make-text " Baz")))))
 
-    (update-node-content  doc first-paragraph
-                          new-content
-                          0)
+    (update-node-content doc
+                         first-paragraph
+                         (make-common-doc-piece new-content 0))
     
     (ok (length= 2 (children doc)))
     (ok (equal (to-markdown
@@ -140,9 +122,8 @@ Second paragraph."))
 
 Bar"))
 
-    (update-node-content  doc second-paragraph
-                          new-content
-                          0)
+    (update-node-content doc second-paragraph
+                         (make-common-doc-piece new-content 0))
 
     ;; After this action, we should have only one
     ;; child in the document
@@ -168,8 +149,7 @@ First paragraph.
 * Second paragraph."))
 
     (update-node-content  doc first-paragraph
-                          new-content
-                          0)
+                          (make-common-doc-piece new-content 0))
 
     ;; After this action, we should have only one
     ;; child in the document
@@ -200,8 +180,7 @@ Third paragraph."))
 
     (update-node-content  doc
                           second-paragraph
-                          new-content
-                          0)
+                          (make-common-doc-piece new-content 0))
 
     (ok (length= 3 (children doc)))
     ;; and it should be a list of two items
@@ -233,10 +212,9 @@ New code
 ```
 Third paragraph."))
 
-    (update-node-content  doc
-                          code-node
-                          new-content
-                          0)
+    (update-node-content doc
+                         code-node
+                         (make-scribdown-piece new-content 0))
 
     (ok (length= 3 (children doc)))
     ;; and it should be a list of two items

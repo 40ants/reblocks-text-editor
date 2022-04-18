@@ -14,7 +14,10 @@
   (:import-from #:reblocks-text-editor/frontend/css)
   (:import-from #:reblocks-text-editor/document/copying)
   (:import-from #:reblocks-text-editor/document/editable)
+  (:import-from #:reblocks-text-editor/typed-pieces/common-doc
+                #:make-common-doc-piece-impl)
   (:import-from #:reblocks-text-editor/document/ops
+                #:ensure-cursor-position-is-correct
                 #:map-document)
   (:import-from #:reblocks-text-editor/utils/markdown
                 #:to-markdown)
@@ -39,22 +42,18 @@
                 #:remove-html-tags)
   (:import-from #:reblocks-text-editor/blocks/code
                 #:code)
+  (:import-from #:reblocks-text-editor/typed-pieces/html
+                #:make-html-piece)
+  (:import-from #:reblocks-text-editor/typed-pieces/base
+                #:convert)
+  (:import-from #:reblocks-text-editor/typed-pieces/scribdown
+                #:make-scribdown-piece)
+  (:import-from #:reblocks-text-editor/typed-pieces/common-doc-impl
+                #:calculate-caret-position-for-html)
   (:local-nicknames (#:ops #:reblocks-text-editor/document/ops))
   (:export #:on-document-update))
 (in-package #:reblocks-text-editor/editor)
 
-
-(defvar *c-file*
-  *compile-file-pathname*)
-
-(defvar *c-file2*
-  #.*compile-file-pathname*)
-
-(defvar *l-file*
-  *load-pathname*)
-
-(defvar *l-file2*
-  #.*load-pathname*)
 
 (defun unwrap-content (node)
   "Returns a list of common doc node. If NODE is a common-doc:content-node,
@@ -110,19 +109,29 @@ Second line
 
 
 (defun process-usual-update (document path new-html cursor-position)
-  (let* ((node (reblocks-text-editor/document/ops::find-changed-node document path)))
+  (let* ((changed-node (reblocks-text-editor/document/ops::find-changed-node document path)))
     (cond
-      (node
-       (let ((plain-text (remove-html-tags
-                          new-html
-                          :remove-new-lines (not (typep node 'common-doc:code-block)))))
-         (log:debug "Updating node content at" path plain-text)
+      (changed-node
+       (let* ((html-doc (make-html-piece new-html cursor-position))
+              (scribdown (convert html-doc :scribdown
+                                  document
+                                  changed-node))
+             ;; (plain-text (remove-html-tags
+             ;;              new-html
+             ;;              :remove-new-lines (not (typep node 'common-doc:code-block))))
+             )
+         (log:debug "Updating node content at" path scribdown)
          (multiple-value-bind (current-node new-cursor-position)
              (reblocks-text-editor/document/ops::update-node-content
-              document node plain-text cursor-position)
+              document changed-node scribdown)
 
-           (reblocks-text-editor/document/ops::ensure-cursor-position-is-correct
-            document current-node new-cursor-position))))
+           ;; TODO: probably we need to return a common-doc-piece
+           ;; from update-node-content?
+           (let* ((piece (make-common-doc-piece current-node new-cursor-position))
+                  (caret-in-html (calculate-caret-position-for-html piece)))
+             (ensure-cursor-position-is-correct document
+                                                current-node
+                                                caret-in-html)))))
       (t
        (log:warn "Cant find node at" path)))))
 
@@ -266,11 +275,14 @@ Second line
          (text-after (slice text caret-position))
          (new-content (concatenate 'string text-before pasted-text text-after))
          (new-caret-position (+ caret-position
-                                (length pasted-text))))
-    (ops::update-node-content document node
-                              new-content
-                              caret-position)
-    (ops::ensure-cursor-position-is-correct document node new-caret-position)))
+                                (length pasted-text)))
+         (piece (make-scribdown-piece new-content new-caret-position)))
+    (multiple-value-bind (updated-node final-caret-position)
+        (ops::update-node-content document node
+                                  piece)
+      (ops::ensure-cursor-position-is-correct document
+                                              updated-node
+                                              final-caret-position))))
 
 
 (defgeneric maybe-delete-block (document path-or-node)

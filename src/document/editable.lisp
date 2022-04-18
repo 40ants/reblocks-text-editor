@@ -3,7 +3,14 @@
   (:import-from #:bordeaux-threads
                 #:make-lock)
   (:import-from #:metacopy
-                #:copy-thing))
+                #:copy-thing)
+  (:import-from #:reblocks-text-editor/utils/markdown
+                #:to-markdown)
+  ;; (:import-from #:reblocks-text-editor/document/ops
+  ;;               #:select-outer-block
+  ;;               #:split-nodes)
+  (:import-from #:reblocks-text-editor/utils/scribdown
+                #:to-scribdown))
 (in-package #:reblocks-text-editor/document/editable)
 
 
@@ -25,7 +32,51 @@
                    :documentation "Stores a tuple of two elements.
                                     The first is a node where caret is located and
                                     the second is a number of the caret offset."
-                   :accessor caret-position)))
+                   :accessor caret-position)
+   (text-before-caret :initform ""
+                      :type string
+                      :documentation "Stores current paragraph's text before the caret."
+                      :accessor text-before-caret)
+   (text-after-caret :initform ""
+                     :type string
+                     :documentation "Stores current paragraph's text after the caret."
+                     :accessor text-after-caret)))
+
+
+(defmethod (setf caret-position) :after ((value t) (document editable-document))
+  (destructuring-bind (node position)
+      value
+    (destructuring-bind (left right)
+        (uiop:symbol-call :reblocks-text-editor/document/ops
+                          :split-nodes
+                          (common-doc:children node)
+                          position)
+      (let ((text-before (to-scribdown (common-doc:make-content left)
+                                       ;; It is important to not trim a space,
+                                       ;; otherwise a space before the cursor will be lost:
+                                       :trim-spaces nil))
+            (text-after (to-scribdown (common-doc:make-content right)
+                                      ;; It is important to not trim a space,
+                                      ;; otherwise a space before the cursor will be lost:
+                                      :trim-spaces nil)))
+        (setf (text-before-caret document)
+              text-before)
+        (setf (text-after-caret document)
+              text-after)))
+    ;; (let ((block-node (select-outer-block document node)))
+    ;;   (destructuring-bind (left right)
+    ;;       (split-nodes (list block-node) position)
+    ;;     (setf (text-before-caret document)
+    ;;           (to-scribdown (common-doc:make-content left)
+    ;;                         ;; It is important to not trim a space,
+    ;;                         ;; otherwise a space before the cursor will be lost:
+    ;;                         :trim-spaces nil))
+    ;;     (setf (text-after-caret document)
+    ;;           (to-scribdown (common-doc:make-content right)
+    ;;                         ;; It is important to not trim a space,
+    ;;                         ;; otherwise a space before the cursor will be lost:
+    ;;                         :trim-spaces nil))))
+    ))
 
 
 (defun get-next-reference-id (document)

@@ -16,6 +16,7 @@
                 #:length=
                 #:lastcar)
   (:import-from #:reblocks-text-editor/document/editable
+                #:editable-document
                 #:caret-position
                 #:get-next-reference-id)
   (:import-from #:serapeum
@@ -26,6 +27,19 @@
                 #:with-document-traversal)
   (:import-from #:reblocks-text-editor/blocks/placeholder
                 #:placeholder)
+  (:import-from #:reblocks-text-editor/typed-pieces/base
+                #:typed-piece
+                #:caret
+                #:document)
+  (:import-from #:reblocks-text-editor/utils/scribdown
+                #:scribdown)
+  (:import-from #:reblocks-text-editor/typed-pieces/scribdown
+                #:scribdown-piece)
+  (:import-from #:reblocks-text-editor/typed-pieces/common-doc
+                #:make-common-doc-piece
+                #:common-doc-piece)
+  (:import-from #:reblocks-text-editor/html/markup
+                #:markup-p)
   (:local-nicknames (#:dom #:reblocks-text-editor/dom/ops)))
 (in-package #:reblocks-text-editor/document/ops)
 
@@ -36,24 +50,30 @@
 
 
 ;; ignore-critiques: optionals
-(defun %map-node-with-children (cnode function &optional (depth 0) make-bindings)
+(defun %map-node-with-children (cnode function &optional (depth 0) make-bindings including-markup)
   (let ((possibly-new-node (funcall function cnode depth)))
     (when (eql possibly-new-node cnode)
       (setf (children cnode)
             (loop for child in (children cnode)
-                  for new-child = (unless (reblocks-text-editor/html/markup::markup-p child)
-                                    (map-document child function
-                                                  (1+ depth)
-                                                  make-bindings))
-                  ;; Mapper might return a list to replace current node with a multiple nodes
-                  if (typep new-child 'list)
-                    append new-child
-                  else
-                    collect new-child)))
+                  for is-markup = (markup-p child)
+                  for need-to-process = (or including-markup
+                                            (not is-markup))
+                  ;; Markup nodes are not collected because they are "virtual"
+                  ;; and should not be written back as a children list:
+                  for need-to-collect = (not is-markup)
+                  for new-children = (when need-to-process
+                                       ;; Mapper might return a list to replace current node with a multiple nodes
+                                       (uiop:ensure-list
+                                        (map-document child function
+                                                      (1+ depth)
+                                                      make-bindings
+                                                      including-markup)))
+                  when need-to-collect
+                    append new-children)))
     (values possibly-new-node)))
 
 
-(defgeneric map-document (node function &optional depth make-bindings)
+(defgeneric map-document (node function &optional depth make-bindings including-markup)
   (:documentation "Map a function recursively (depth-first),
                    possibly replacing nodes with ones a FUNCTION will return.
 
@@ -66,30 +86,40 @@
                    Also, function might return a list to replace current node
                    with a multiple nodes.")
 
-  (:method :around (doc function &optional (depth 0) make-bindings)
+  (:method :around (doc function &optional (depth 0) make-bindings including-markup)
+    (declare (ignore including-markup))
     (multiple-value-bind (vars vals)
         (when make-bindings
           (funcall make-bindings doc depth))
       (progv vars vals
         (call-next-method))))
   
-  (:method ((doc common-doc:document) function &optional (depth 0) make-bindings)
+  (:method ((doc common-doc:document) function &optional (depth 0) make-bindings including-markup)
     (setf (children doc)
           (loop for child in (children doc)
-                unless (reblocks-text-editor/html/markup::markup-p child)
-                  collect (map-document child function
-                                        (1+ depth)
-                                        make-bindings)))
+                for is-markup = (markup-p child)
+                for need-to-process = (or including-markup
+                                          (not is-markup))
+                ;; Markup nodes are not collected because they are "virtual"
+                ;; and should not be written back as a children list:
+                for need-to-collect = (not is-markup)
+                for new-node =  (when need-to-process
+                                  (map-document child function
+                                                (1+ depth)
+                                                make-bindings
+                                                including-markup))
+                when need-to-collect
+                  collect new-node))
     (values doc))
 
-  (:method ((cnode common-doc:content-node) function &optional (depth 0) make-bindings)
-    (%map-node-with-children cnode function depth make-bindings))
+  (:method ((cnode common-doc:content-node) function &optional (depth 0) make-bindings including-markup)
+    (%map-node-with-children cnode function depth make-bindings including-markup))
 
-  (:method ((cnode common-doc:base-list) function &optional (depth 0) make-bindings)
-    (%map-node-with-children cnode function depth make-bindings))
+  (:method ((cnode common-doc:base-list) function &optional (depth 0) make-bindings including-markup)
+    (%map-node-with-children cnode function depth make-bindings including-markup))
 
-  (:method ((dnode common-doc:document-node) function &optional (depth 0) make-bindings)
-    (declare (ignore make-bindings))
+  (:method ((dnode common-doc:document-node) function &optional (depth 0) make-bindings including-markup)
+    (declare (ignore make-bindings including-markup))
     (funcall function dnode depth)))
 
 
@@ -206,7 +236,7 @@
               current-cursor-position))))
 
 
-(defun select-outer-node-of-type (root-node node searched-type)
+(defun select-outer-node (root-node node predicate-func)
   "Searched a nearest outer list item."
   (let ((current-outer-item nil))
     (declare (special current-outer-item))
@@ -215,20 +245,35 @@
              (declare (ignore depth))
              
              (when (eql current-node node)
-               (return-from select-outer-node-of-type
+               (return-from select-outer-node
                  current-outer-item))
              (values current-node))
            (make-binding (current-node depth)
              (declare (ignore depth))
 
-             (when (typep current-node
-                          searched-type)
+             (when (funcall predicate-func current-node)
                (values (list 'current-outer-item)
                        (list current-node)))))
       (map-document root-node
                     #'do-find 0 #'make-binding)
       ;; When nothing found
       (values))))
+
+(defun select-outer-node-of-type (root-node node searched-type)
+  "Searched a nearest outer node of given type."
+  (select-outer-node root-node
+                     node
+                     (lambda (current-node)
+                       (typep current-node
+                              searched-type))))
+
+(defun select-outer-block (root-node node)
+  "Searched a nearest outer list item."
+  (select-outer-node-of-type root-node
+                             node
+                             '(or
+                               common-doc:paragraph
+                               common-doc:code-block)))
 
 
 (defun select-outer-list (root-node node)
@@ -321,10 +366,12 @@
                   ;; not it's text representation, because we can have noneditable
                   ;; nodes there, replaced by placeholders:
                   (first-part-length (node-length previous-paragraph))
-                  (full-text (concatenate 'string
-                                          first-part
-                                          text-to-append)))
-             (update-node-content document previous-paragraph full-text cursor-position)
+                  (full-text (reblocks-text-editor/typed-pieces/scribdown::make-scribdown-piece
+                              (concatenate 'string
+                                           first-part
+                                           text-to-append)
+                              cursor-position)))
+             (update-node-content document previous-paragraph full-text)
              (delete-node document
                           paragraph-to-delete)
              (ensure-cursor-position-is-correct document
@@ -498,7 +545,9 @@
                (add-reference-ids document
                                   :to-node new-paragraph)
 
-               (update-node-content document changed-paragraph nodes-before cursor-position)
+               (update-node-content document changed-paragraph
+                                    (make-common-doc-piece (common-doc:make-paragraph nodes-before)
+                                                           cursor-position))
                (insert-node document
                             new-paragraph
                             :relative-to changed-paragraph)
@@ -849,6 +898,37 @@
 
 
 (defun prepare-new-content (document text)
+  "Transforms string into a CommonDoc element tree.
+
+   If editable document is not given, then function will not replace
+   placeholders with their previous values and will not add id
+   to the new nodes. This is more useful for unittests than for a production."
+  (check-type document (or null
+                           editable-document))
+  (check-type text string)
+  (let ((node
+          (cond
+            ((string= text "```")
+             (common-doc:make-code-block nil
+                                         (common-doc:make-text +zero-width-space+)))
+            (t
+             (let* ((parsed-markdown (from-markdown text))
+                    (with-scriba-nodes (parse-scriba-nodes parsed-markdown)))
+               (cond
+                 (document
+                  (replace-placeholders
+                   document
+                   with-scriba-nodes))
+                 (t
+                  with-scriba-nodes)))))))
+    (when document
+      (add-reference-ids document
+                         :to-node node))
+    (values node)))
+
+
+(defmethod convert (document text)
+  "Transforms string into a CommonDoc element tree."
   (let ((node
           (cond
             ((string= text "```")
@@ -872,178 +952,151 @@
   (:documentation "Deletes a node from container"))
 
 
-(defun decrement-of-placeholders-before-caret (content caret-position)
-  "Counts characters taken by text like \"Image попробуем в середине строки: @placeholder[ref=some]()\"
-   inside the CONTENT.
-   Returns sum of each placeholder minus number of placeholders, because
-   each noneditable object \"has\" length of 1 character."
-  (loop with matches = (cl-ppcre:all-matches "@placeholder\\[[^]]*\\]\\([^)]*\\)" content
-                                             :end (min caret-position
-                                                       (length content)))
-        for (left right) on matches by #'cddr
-        summing (- right left 1)))
-
-
-(defun guess-caret-position-decrement (content caret-position)
-  "Returns a number of symbols, which will disappear if some content
-   in the CONTENT string will be replaced by a noneditable block
-   like an image."
-  (check-type content string)
-  (check-type caret-position integer)
-  (let ((placeholders-decrement
-          (decrement-of-placeholders-before-caret content caret-position)))
-    (destructuring-bind (&optional left right)
-        (cl-ppcre:all-matches "!\\[[^]]*\\]\\([^)]*\\)$" content
-                              :end (min caret-position
-                                        (length content)))
-      (when (and left right)
-        (return-from guess-caret-position-decrement
-          ;; Image was inserted and image node has length of 1
-          ;; that is why we are making 1- here
-          (+ (- right left 1)
-             placeholders-decrement))))
-
-    ;; If nothing matched:
-    placeholders-decrement))
-
 ;; TODO: decide what to do with replace-node-content function
 ;; because now it is easy to misuse these two functions
-(defgeneric update-node-content (document node new-content cursor-position)
+(defgeneric update-node-content (document node new-content)
   (:documentation "Updates content of the given node. Sometimes the node can be replaced with other nodes."))
 
 
 (defmethod update-node-content ((document reblocks-text-editor/document/editable::editable-document)
                                 (node common-doc::paragraph)
-                                new-content
-                                cursor-position)
+                                (new-content scribdown-piece))
   ;; Here we are updating our document tree
   (log:debug "Updating node content"
              node
-             new-content
-             cursor-position)
-  (let* (;; (new-content (prepare-new-content document plain-text))
-         (previous-node (find-previous-sibling document node))
-         (next-node (find-next-sibling document node)))
-
-    (etypecase new-content
-      (string
-       (let* ((cursor-position-decrement ;; 0
-                                         (guess-caret-position-decrement new-content
-                                                                         cursor-position))
-              (processed-content
-                (prepare-new-content document new-content))
-              (children (children processed-content))
-              (last-child (car (last children))))
+             new-content)
+  (let* ((common-doc-piece (reblocks-text-editor/typed-pieces/base::convert
+                            new-content
+                            :common-doc
+                            document
+                            node)))
          
-         (when (typep last-child 'common-doc:image)
-           (let ((empty-node (common-doc:make-text +zero-width-space+)))
-             (add-reference-ids document
-                                :to-node empty-node)
-             (setf (children processed-content)
-                   (append (children processed-content)
-                           (list empty-node))))
-           (decf cursor-position-decrement))
+    (update-node-content document node
+                         common-doc-piece)))
 
-         (update-node-content document node
-                              processed-content
-                              ;; When are replacing text entered by a user
-                              ;; with a noneditable node like image,
-                              ;; caret position should be decreased to the
-                              ;; length of this entered text, because now
-                              ;; we are removing it from the editable area.
-                              ;; 
-                              ;; Here we are using a hack to guess how many
-                              ;; characters was removed by PREPARE-NEW-CONTENT:
-                              (- cursor-position
-                                 cursor-position-decrement))))
-      (common-doc:code-block
-       (replace-node document
-                     node
-                     new-content)
-       (values new-content  0))
-      ;; A new list item was created by manual enter of the "* "
-      ;; at the beginning of the node:
-      (common-doc:unordered-list
-       (let ((list-node new-content))
-         (cond
-           ;; If user enters "* " in a beginning of the node,
-           ;; following a list, we should attach this new list item
-           ;; to the existing list instead of creating a new one and inserting
-           ;; it into the document
-           ((eql (type-of previous-node)
-                 (type-of list-node))
-            (let ((new-children (children list-node)))
-              (insert-node document new-children
-                           :relative-to previous-node
-                           :position :as-last-child)
-              (delete-node document node)
-              (values (first new-children)
-                      0)))
-           ;; The opposite situation, when we've created a list
-           ;; before another one:
-           ((eql (type-of next-node)
-                 (type-of list-node))
-            (let ((new-children (children list-node)))
-              (insert-node document new-children
-                           :relative-to next-node
-                           :position :as-first-child)
-              (delete-node document node)
-              (values (first new-children)
-                      0)))
-           ;; Just insert a new list into the document
-           (t
-            (replace-node document
-                          node
-                          list-node)
-            (values list-node
-                    (decf cursor-position 2))))))
-      ;; Otherwise, we just insert
-      ;; node's content into existing node:
-      (common-doc:paragraph
-       (update-node-content document node
-                            (common-doc:children
-                             new-content)
-                            cursor-position))
-      (list
-       (replace-node-content document
-                             node
-                             new-content)
-       (values node cursor-position)))))
+
+(defmethod update-node-content ((document reblocks-text-editor/document/editable::editable-document)
+                                (node common-doc::paragraph)
+                                (new-content common-doc-piece))
+  ;; Here we are updating our document tree
+  (log:debug "Updating node content"
+             node
+             new-content)
+  (etypecase (document new-content)
+    ;; TODO: это работать не будет. Надо придумать как переделать.
+    (common-doc:code-block
+     (replace-node document
+                   node
+                   new-content)
+     (values new-content  0))
+    ;; A new list item was created by manual enter of the "* "
+    ;; at the beginning of the node:
+    (common-doc:unordered-list
+     (let ((previous-node (find-previous-sibling document node))
+           (next-node (find-next-sibling document node))
+           (list-node (document new-content)))
+       (cond
+         ;; If user enters "* " in a beginning of the node,
+         ;; following a list, we should attach this new list item
+         ;; to the existing list instead of creating a new one and inserting
+         ;; it into the document
+         ((eql (type-of previous-node)
+               (type-of list-node))
+          (let ((new-children (children list-node)))
+            (insert-node document new-children
+                         :relative-to previous-node
+                         :position :as-last-child)
+            (delete-node document node)
+            (values (first new-children)
+                    0)))
+         ;; The opposite situation, when we've created a list
+         ;; before another one:
+         ((eql (type-of next-node)
+               (type-of list-node))
+          (let ((new-children (children list-node)))
+            (insert-node document new-children
+                         :relative-to next-node
+                         :position :as-first-child)
+            (delete-node document node)
+            (values (first new-children)
+                    0)))
+         ;; Just insert a new list into the document
+         (t
+          (replace-node document
+                        node
+                        list-node)
+          (values list-node
+                  (- (caret new-content) 2))))))
+    ;; Otherwise, we just insert
+    ;; node's content into existing node:
+    (common-doc:paragraph
+     ;; (update-node-content document node
+     ;;                      (common-doc:children
+     ;;                       new-content)
+     ;;                      cursor-position)
+     (replace-node-content document
+                           node
+                           (common-doc:children
+                            (document new-content)))
+     (values node (caret new-content)))
+    ;; (list
+    ;;  (replace-node-content document
+    ;;                        node
+    ;;                        new-content)
+    ;;  (values node cursor-position))
+    ))
+
+(defmethod update-node-content ((document reblocks-text-editor/document/editable::editable-document)
+                                (node common-doc::paragraph)
+                                (new-content list))
+  ;; Here we are updating our document tree
+  (log:debug "Updating node content"
+             node
+             new-content)
+  (replace-node-content document
+                        node
+                        new-content)
+  (values node cursor-position))
 
 
 (defmethod update-node-content ((document reblocks-text-editor/document/editable::editable-document)
                                 (node common-doc:code-block)
-                                (new-content string)
-                                cursor-position)
-  ;; Here we are updating our document tree
-  (log:debug "Updating code block's content"
-             node
-             new-content
-             cursor-position)
-  (let* ((children (common-doc:children node))
-         (new-content (remove-zero-spaces-unless-string-is-empty new-content))
-         ;; (new-content (ensure-two-newlines-at-the-end new-content))
-         )
-    (log:debug "New block content is" new-content)
-    (cond
-      ((length< 1 children)
-       (error "This code block should have no more than 1 child: ~A"
-              node))
-      ((null children)
-       (replace-node-content document
-                             node
-                             (list (common-doc:make-text new-content))))
-      (t
+                                new-content ;; string
+                                )
+  ;; (check-type new-content typed-piece)
+  (check-type new-content scribdown-piece)
+
+  ;; TODO: decide how to update code blocks
+  (let ((caret (caret new-content))
+        (new-content (document new-content)))
+    ;; Here we are updating our document tree
+    (log:debug "Updating code block's content"
+               node
+               new-content)
+    (let* ((children (common-doc:children node))
+           (new-content (remove-zero-spaces-unless-string-is-empty new-content))
+           ;; (new-content (ensure-two-newlines-at-the-end new-content))
+           )
+      (log:debug "New block content is" new-content)
+      (cond
+        ((length< 1 children)
+         (error "This code block should have no more than 1 child: ~A"
+                node))
+        ((null children)
+         (replace-node-content document
+                               node
+                               (list (common-doc:make-text new-content))))
+        (t
        
-       (unless (typep (first children)
-                      'common-doc:text-node)
-         (error "Code block should have a TEXT-NODE as it's child, but it is: ~A"
-                (first children)))
+         (unless (typep (first children)
+                        'common-doc:text-node)
+           (error "Code block should have a TEXT-NODE as it's child, but it is: ~A"
+                  (first children)))
        
-       (replace-node-content document
-                             (first children)
-                             new-content)))
-    (values node cursor-position)))
+         (replace-node-content document
+                               (first children)
+                               new-content)))
+      (values node caret))))
 
 
 
@@ -1068,12 +1121,16 @@
        (dom::move-cursor changed-node caret-position
                          :from-the-end from-the-end)
        (setf (caret-position document)
-             (list changed-node caret-position)))
+             (list changed-node caret-position
+                   ;; changed-node caret-position
+                   )))
       (node
        (dom::move-cursor node new-caret-position
                          :from-the-end from-the-end)
        (setf (caret-position document)
-             (list node new-caret-position)))
+             (list changed-node caret-position
+                   ;; node new-caret-position
+                   )))
       (t
        (log:error "Unable to find node for"
                   caret-position
