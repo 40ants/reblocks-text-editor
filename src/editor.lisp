@@ -4,8 +4,7 @@
   (:import-from #:common-html)
   (:import-from #:reblocks-parenscript)
   (:import-from #:reblocks-lass)
-  (:import-from #:reblocks-text-editor/html
-                #:children-including-markup)
+  (:import-from #:reblocks-text-editor/html)
   (:import-from #:reblocks-text-editor/html/markdown-link)
   (:import-from #:reblocks-text-editor/html/web-link)
   (:import-from #:reblocks-text-editor/html/document-link)
@@ -15,7 +14,7 @@
   (:import-from #:reblocks-text-editor/document/copying)
   (:import-from #:reblocks-text-editor/document/editable)
   (:import-from #:reblocks-text-editor/typed-pieces/common-doc
-                #:make-common-doc-piece-impl)
+                #:make-common-doc-piece)
   (:import-from #:reblocks-text-editor/document/ops
                 #:ensure-cursor-position-is-correct
                 #:map-document)
@@ -45,6 +44,7 @@
   (:import-from #:reblocks-text-editor/typed-pieces/html
                 #:make-html-piece)
   (:import-from #:reblocks-text-editor/typed-pieces/base
+                #:caret
                 #:convert)
   (:import-from #:reblocks-text-editor/typed-pieces/scribdown
                 #:make-scribdown-piece)
@@ -128,10 +128,11 @@ Second line
            ;; TODO: probably we need to return a common-doc-piece
            ;; from update-node-content?
            (let* ((piece (make-common-doc-piece current-node new-cursor-position))
-                  (caret-in-html (calculate-caret-position-for-html piece)))
+                  ;; (caret-in-html (calculate-caret-position-for-html piece))
+                  )
              (ensure-cursor-position-is-correct document
                                                 current-node
-                                                caret-in-html)))))
+                                                (caret piece))))))
       (t
        (log:warn "Cant find node at" path)))))
 
@@ -206,7 +207,7 @@ Second line
                     :position position
                     :relative-to relative-to)
 
-  (let* ((last-child (lastcar (children-including-markup new-node)))
+  (let* ((last-child (lastcar (common-doc:children new-node)))
          (last-child-len (length (to-markdown last-child))))
     (ops::ensure-cursor-position-is-correct document last-child last-child-len)))
 

@@ -10,7 +10,9 @@
   ;;               #:select-outer-block
   ;;               #:split-nodes)
   (:import-from #:reblocks-text-editor/utils/scribdown
-                #:to-scribdown))
+                #:to-scribdown)
+  (:import-from #:reblocks-text-editor/utils/text
+                #:collect-all-text))
 (in-package #:reblocks-text-editor/document/editable)
 
 
@@ -46,23 +48,35 @@
 (defmethod (setf caret-position) :after ((value t) (document editable-document))
   (destructuring-bind (node position)
       value
-    (destructuring-bind (left right)
-        (uiop:symbol-call :reblocks-text-editor/document/ops
-                          :split-nodes
-                          (common-doc:children node)
-                          position)
-      (let ((text-before (to-scribdown (common-doc:make-content left)
-                                       ;; It is important to not trim a space,
-                                       ;; otherwise a space before the cursor will be lost:
-                                       :trim-spaces nil))
-            (text-after (to-scribdown (common-doc:make-content right)
-                                      ;; It is important to not trim a space,
-                                      ;; otherwise a space before the cursor will be lost:
-                                      :trim-spaces nil)))
-        (setf (text-before-caret document)
-              text-before)
-        (setf (text-after-caret document)
-              text-after)))
+    (let ((nodes (if (slot-exists-p node 'common-doc:children)
+                     (common-doc:children node)
+                     (list node))))
+      (destructuring-bind (left right)
+          (uiop:symbol-call :reblocks-text-editor/document/ops
+                            :split-nodes
+                            nodes
+                            position)
+        ;; TODO: надо придумать что-то с тем, что в разорванной посередине markup
+        ;; конструкции каждая часть обрамляется в markup.
+        ;; возможно тут to-scribdown не лучший вариант и надо просто делать to-text
+        (let ((text-before
+                (collect-all-text (common-doc:make-content left))
+                ;; (to-scribdown (common-doc:make-content left)
+                ;;               ;; It is important to not trim a space,
+                ;;               ;; otherwise a space before the cursor will be lost:
+                ;;               :trim-spaces nil)
+                )
+              (text-after
+                (collect-all-text (common-doc:make-content right))
+                ;; (to-scribdown (common-doc:make-content right)
+                ;;               ;; It is important to not trim a space,
+                ;;               ;; otherwise a space before the cursor will be lost:
+                ;;               :trim-spaces nil)
+                ))
+          (setf (text-before-caret document)
+                text-before)
+          (setf (text-after-caret document)
+                text-after))))
     ;; (let ((block-node (select-outer-block document node)))
     ;;   (destructuring-bind (left right)
     ;;       (split-nodes (list block-node) position)

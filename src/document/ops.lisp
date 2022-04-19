@@ -11,7 +11,8 @@
                 #:ensure-two-newlines-at-the-end
                 #:remove-zero-spaces-unless-string-is-empty
                 #:+zero-width-space+)
-  (:import-from #:reblocks-text-editor/html)
+  (:import-from #:reblocks-text-editor/html
+                #:ensure-markup-nodes)
   (:import-from #:alexandria
                 #:length=
                 #:lastcar)
@@ -55,12 +56,13 @@
     (when (eql possibly-new-node cnode)
       (setf (children cnode)
             (loop for child in (children cnode)
-                  for is-markup = (markup-p child)
-                  for need-to-process = (or including-markup
-                                            (not is-markup))
-                  ;; Markup nodes are not collected because they are "virtual"
-                  ;; and should not be written back as a children list:
-                  for need-to-collect = (not is-markup)
+                  ;; for is-markup = (markup-p child)
+                  for need-to-process = t
+                                        ;; (or including-markup
+                                        ;;     (not is-markup))
+                                        ;; Markup nodes are not collected because they are "virtual"
+                                        ;; and should not be written back as a children list:
+                  for need-to-collect = t ;; (not is-markup)
                   for new-children = (when need-to-process
                                        ;; Mapper might return a list to replace current node with a multiple nodes
                                        (uiop:ensure-list
@@ -97,12 +99,12 @@
   (:method ((doc common-doc:document) function &optional (depth 0) make-bindings including-markup)
     (setf (children doc)
           (loop for child in (children doc)
-                for is-markup = (markup-p child)
-                for need-to-process = (or including-markup
-                                          (not is-markup))
+                ;; for is-markup = (markup-p child)
+                for need-to-process = t ;; (or including-markup
+                                        ;;   (not is-markup))
                 ;; Markup nodes are not collected because they are "virtual"
                 ;; and should not be written back as a children list:
-                for need-to-collect = (not is-markup)
+                for need-to-collect = t ;; (not is-markup)
                 for new-node =  (when need-to-process
                                   (map-document child function
                                                 (1+ depth)
@@ -207,7 +209,8 @@
                   ;; We need this render-markup flag to
                   ;; place cursor propertly after any
                   ;; markup elements:
-                  (let ((reblocks-text-editor/html::*render-markup* t))
+                  (let (;; (reblocks-text-editor/html::*render-markup* t)
+                        )
                     (cond
                       ((children node)
                        (mapc #'recursive-find
@@ -596,7 +599,9 @@
 
       (add-reference-ids document :to-node node-for-cursor)
 
-      (update-node-content document node new-nodes cursor-position)
+      (update-node-content document node
+                           (make-common-doc-piece (common-doc:make-paragraph new-nodes)
+                                                  cursor-position))
       (ensure-cursor-position-is-correct document
                                          node-for-cursor
                                          0
@@ -924,7 +929,8 @@
     (when document
       (add-reference-ids document
                          :to-node node))
-    (values node)))
+
+    (values (ensure-markup-nodes node))))
 
 
 (defmethod convert (document text)
@@ -1143,7 +1149,7 @@
             (typecase node
               (node-with-children
                (lastcar
-                (reblocks-text-editor/html::children-including-markup node)))
+                (common-doc:children node)))
               (t node))))
       (ensure-cursor-position-is-correct document
                                          last-node

@@ -197,3 +197,15 @@
         for char = (aref text idx)
         while (char= char #\Space)
         summing 1))
+
+
+(defun collect-all-text (root-node)
+  "Difference with common-doc.ops:collect-all-text is that
+   this function does not joines text nodes using spaces."
+  (with-output-to-string (s)
+    (common-doc.ops:with-document-traversal (root-node node)
+      (typecase node
+        (common-doc:paragraph
+         (terpri s))
+        (common-doc:text-node
+         (write-string (common-doc:text node) s))))))

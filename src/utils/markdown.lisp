@@ -21,9 +21,10 @@
    document, like a node before the a text to be pasted.
 
    If you don't do this, then a space before the cursor might be lost."
-  (let* ((commondoc-markdown/emitter:*emit-section-anchors* nil)
+  (let* ((reblocks-text-editor/html::*hide-markup-nodes* t)
+         (commondoc-markdown/emitter:*emit-section-anchors* nil)
          (commondoc-markdown/emitter:*generate-short-link-references* nil)
-         (reblocks-text-editor/html::*render-markup*)
+         ;; (reblocks-text-editor/html::*render-markup*)
          (result (common-doc.format:emit-to-string (make-instance 'commondoc-markdown:markdown)
                                                    node)))
     (if trim-spaces

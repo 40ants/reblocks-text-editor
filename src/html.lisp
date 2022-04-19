@@ -8,6 +8,8 @@
                 #:alet
                 #:awhen)
   (:import-from #:reblocks-text-editor/html/markup
+                #:markup-p
+                #:markup
                 #:make-markup2)
   (:import-from #:alexandria
                 #:alist-hash-table))
@@ -15,6 +17,8 @@
 
 
 (defvar *render-markup* nil)
+
+(defvar *hide-markup-nodes* nil)
 
 
 (defgeneric to-html (node)
@@ -24,15 +28,9 @@
   (:documentation "Returns an optional string with HTML class of the element."))
 
 
-(defun children-including-markup (node)
-  (let ((*render-markup* t))
-    (common-doc:children node)))
-
-
 (defun to-html-string (node)
-  (let ((*render-markup* t))
-    (with-output-to-string (reblocks/html:*stream*)
-      (to-html node))))
+  (with-output-to-string (reblocks/html:*stream*)
+    (to-html node)))
 
 (defmethod html-class ((node common-doc:document-node))
   (awhen (common-doc:metadata node)
@@ -149,32 +147,55 @@
 
 ;; markup
 
-(defmethod common-doc:children :around ((node common-doc:italic))
-  (if *render-markup*
-      (append (list (make-markup2 node "*" "left"))
-              (call-next-method)
-              (list (make-markup2 node "*" "right")))
-      (call-next-method)))
+(defgeneric add-markup-to (node)
+  (:method ((node t))
+    node)
+  (:method ((node common-doc:italic))
+    (let ((children (common-doc:children node)))
+      (unless (typep (first children)
+                     'markup)
+        (setf (common-doc:children node)
+              (append (list (make-markup2 node "*" "left"))
+                      children
+                      (list (make-markup2 node "*" "right")))))
+      node))
+  (:method ((node common-doc:bold))
+    (let ((children (common-doc:children node)))
+      (unless (typep (first children)
+                     'markup)
+        (setf (common-doc:children node)
+              (append (list (make-markup2 node "**" "left"))
+                      children
+                      (list (make-markup2 node "**" "right")))))
+      node))
+  (:method ((node common-doc:code))
+    (let ((children (common-doc:children node)))
+      (unless (typep (first children)
+                     'markup)
+        (setf (common-doc:children node)
+              (append (list (make-markup2 node "`" "left"))
+                      children
+                      (list (make-markup2 node "`" "right")))))
+      node))
+  (:method ((node common-doc:strikethrough))
+    (let ((children (common-doc:children node)))
+      (unless (typep (first children)
+                     'markup)
+        (setf (common-doc:children node)
+              (append (list (make-markup2 node "--" "left"))
+                      children
+                      (list (make-markup2 node "--" "right")))))
+      node)))
 
 
-(defmethod common-doc:children :around ((node common-doc:bold))
-  (if *render-markup*
-      (append (list (make-markup2 node "**" "left"))
-              (call-next-method)
-              (list (make-markup2 node "**" "right")))
-      (call-next-method)))
+(defmethod common-doc:children :around ((node t))
+  (let ((result (call-next-method)))
+    (if *hide-markup-nodes*
+        (remove-if #'markup-p result)
+        result)))
 
-(defmethod common-doc:children :around ((node common-doc:code))
-  (if *render-markup*
-      (append (list (make-markup2 node "`" "left"))
-              (call-next-method)
-              (list (make-markup2 node "`" "right")))
-      (call-next-method)))
 
-(defmethod common-doc:children :around ((node common-doc:strikethrough))
-  (if *render-markup*
-      (append (list (make-markup2 node "--" "left"))
-              (call-next-method)
-              (list (make-markup2 node "--" "right")))
-      (call-next-method)))
-
+(defun ensure-markup-nodes (root-node)
+  (common-doc.ops:with-document-traversal (root-node node)
+    (add-markup-to node))
+  root-node)

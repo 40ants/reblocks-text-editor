@@ -66,7 +66,7 @@
   (check-type root-node common-doc:document-node)
   (check-type caret integer)
   
-  (let ((reblocks-text-editor/html::*render-markup* t)
+  (let (;; (reblocks-text-editor/html::*render-markup* t)
         (current-pos caret)
         (decrement 0))
     (flet ((walk (node depth)
@@ -126,7 +126,7 @@
    markup characters before the caret."
   (check-type piece common-doc-piece)
 
-  (let ((reblocks-text-editor/html::*render-markup* t)
+  (let (;; (reblocks-text-editor/html::*render-markup* t)
         (current-pos (caret piece))
         (chars-left (caret piece)))
     (flet ((walk (node depth)
@@ -194,9 +194,10 @@
                       (list empty-node))))
       (decf cursor-position-decrement))
 
-    (incf cursor-position-decrement
-          (markup-caret-position-decrement processed-content
-                                           (caret from)))
+    ;; TODO: with real markup nodes we don't need this:
+    ;; (incf cursor-position-decrement
+    ;;       (markup-caret-position-decrement processed-content
+    ;;                                        (caret from)))
     
     (make-common-doc-piece processed-content
                            ;; When are replacing text entered by a user

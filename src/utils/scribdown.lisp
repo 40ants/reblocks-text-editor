@@ -26,7 +26,10 @@
 (defun to-scribdown (node &key (trim-spaces t))
   (let* ((commondoc-markdown/emitter:*emit-section-anchors* nil)
          (commondoc-markdown/emitter:*generate-short-link-references* nil)
-         (reblocks-text-editor/html::*render-markup*)
+         ;; We need to hide explicit markup nodes because CommonDoc nodes will be rendered
+         ;; with their own appropriate markup.
+         (reblocks-text-editor/html::*hide-markup-nodes* t)
+         ;; (reblocks-text-editor/html::*render-markup*)
          (result (common-doc.format:emit-to-string (make-instance 'scribdown)
                                                    node)))
     (if trim-spaces
