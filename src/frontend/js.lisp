@@ -115,10 +115,19 @@
                (element-to-select (if element-non-editable
                                       element
                                       ;; Selecting the first text node
-                                      ;; inside the element:
-                                      (@ element
-                                         child-nodes
-                                         0)))
+                                      ;; inside the element. Sometimes
+                                      ;; we can have an empty span nodes.
+                                      ;; In this case child-nodes will be
+                                      ;; empty and thus we have to select
+                                      ;; element itself.
+                                      (if (> (@ element
+                                                child-nodes
+                                                length)
+                                             0)
+                                          (@ element
+                                             child-nodes
+                                             0)
+                                          element)))
                (range (chain document (create-range)))
                (sel (chain window (get-selection))))
 

@@ -573,7 +573,9 @@
 
 
 (defun insert-into-paragraph (document node cursor-position new-content)
-  "Inserts node into paragraph into the cursor position."
+  "Inserts node into paragraph into the cursor position.
+
+   Used when somebody copy-n-pastes a new piece into the paragraph."
   (when node
     (add-reference-ids document :to-node new-content)
     
