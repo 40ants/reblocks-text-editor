@@ -7,7 +7,8 @@
                 #:@
                 #:create
                 #:false
-                #:undefined))
+                #:undefined
+                #:new))
 (in-package #:reblocks-text-editor/frontend/js)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; 
@@ -54,14 +55,15 @@
       (defun replace-node (args)
         (let* ((version (@ args version))
                (node-id (@ args node-id))
+               (html-string (@ args with-html))
+
                (node (chain document
                             (get-element-by-id node-id)))
                (editor (get-editor-content-node node))
                (current-version (@ editor dataset version)))
 
           (unless (< version current-version)
-            (let* ((html-string (@ args with-html))
-                   (html (from-html html-string)))
+            (let* ((html (from-html html-string)))
               (chain console
                      (log "Replacing" node "with" html))
               (chain node
@@ -75,15 +77,24 @@
                (after-node (chain document
                                   (get-element-by-id relative-to-node-id)))
                (editor (get-editor-content-node after-node))
-               (current-version (@ editor dataset version)))
+               (current-version (progn
+                                  (unless editor
+                                    debugger)
+                                  (@ editor dataset version))))
           
-          (unless (< version current-version)
-            (let* ((html-string (@ args html))
-                   (html (from-html html-string)))
-              (chain console
-                     (log "INSERTING " html-string))
-              (chain after-node
-                     (insert-adjacent-h-t-m-l position html-string))))))
+          (cond
+            ((< version current-version)
+             (chain console
+                    (log "Skipping insertion because current-version " current-version
+                         " is larger then version " version
+                         " of the command")))
+            (t
+              (let* ((html-string (@ args html))
+                     (html (from-html html-string)))
+                (chain console
+                       (log "INSERTING " html-string))
+                (chain after-node
+                       (insert-adjacent-h-t-m-l position html-string)))))))
       
       (defun delete-node (args)
         (let* ((version (@ args version))
@@ -93,13 +104,19 @@
                (editor (get-editor-content-node node))
                (current-version (@ editor dataset version)))
           
-          (unless (< version current-version)
-            (let* ((html-string (@ args html))
-                   (html (from-html html-string)))
-              (chain console
-                     (log "Deleting node" node-id))
-              (chain node
-                     (remove))))))
+          (cond
+            ((< version current-version)
+             (chain console
+                    (log "Skipping deletion because current-version " current-version
+                         " is larger then version " version
+                         " of the command")))
+            (t
+             (let* ((html-string (@ args html))
+                    (html (from-html html-string)))
+               (chain console
+                      (log "Deleting node" node-id))
+               (chain node
+                      (remove)))))))
       
       (defun set-cursor (args)
         (let* ((element-id (@ args node-id))
@@ -140,7 +157,7 @@
                          (- (chain element
                                    inner-text
                                    length)
-                             position)
+                            position)
                          position)))
              (chain range
                     (collapse t))
@@ -595,9 +612,9 @@
                      (setf (@ node text-content)
                            (+ (chain text
                                      (substring 0 caret))
-                               #\Newline
-                               (chain text
-                                      (substring caret))))
+                              #\Newline
+                              (chain text
+                                     (substring caret))))
                      (set-cursor (create node-id parent-node-id
                                          position (1+ caret)))
                      (change-text event "modify"))))))
@@ -736,4 +753,120 @@
              (change-text event "maybe-delete-block")
              
              (chain event
-                    (prevent-default)))))))))
+                    (prevent-default))))))
+
+      (defun update-progress (event content-node progress-id)
+        (let* ((percent (parse-int (* (/ (@ event loaded)
+                                         (@ event total))
+                                      100)))
+               ;; Here we don't increment current version,
+               ;; because actually we don't change text,
+               ;; only percentage of the progress-bar.
+               ;; Another reason, why we should not change
+               ;; current document version is because
+               ;; if we do, then AJAX uploading operation
+               ;; started before, will not be able to replace
+               ;; progress-bar with real image object.
+               (current-version
+                 (parse-int (@ content-node dataset version)))
+               (args (create :type "update-progress"
+                             :progress-id progress-id
+                             :percent percent
+                             :version current-version)))
+          (chain console
+                 (log "Loaded: " percent "%"))
+          
+          (initiate-action (@ content-node dataset action-code)
+                           (create :args args))))
+
+      (defun upload-success (event xhr)
+        (chain event prevent-default)
+        
+        (chain console
+               (log "Upload success"))
+        (cond
+          ((= (@ xhr response-type)
+              "")
+           (let ((response
+                   (chain -j-s-o-n
+                          (parse (@ xhr response-text)))))
+             (chain console
+                    (log "Upload response" response))
+             (on-action-success response)))
+          (t
+           (chain console
+                  (log "Ignoring response of type" (@ xhr response-type))))))
+      
+      (defun upload-error (event)
+        (chain event prevent-default)
+        
+        (chain console
+               (log "Upload error")))
+      
+      (defun create-random-id ()
+        "Returns a string with random id of length 7"
+        (chain -math
+               (random)
+               (to-string)
+               ;; Here we skip 0. and take 7 digits of the rest
+               (substring 2 9)))
+      
+      (defun upload-file (event)
+        (chain console
+               (log "Uploading" event))
+        (chain event prevent-default)
+        
+        (let* ((content (get-editor-content-node (@ event target)))
+               (upload-code (@ content dataset upload-code))
+               (url (get-action-url upload-code))
+               (progress-id (+ "pr" (create-random-id)))
+               (file (elt
+                      (@ event
+                         data-transfer
+                         files)
+                      0))
+               (xhr (new -x-m-l-http-request)))
+          
+          (paste-text event (+ "@progress[ref=\""
+                               progress-id
+                               "\"]()"))
+          
+          (chain xhr
+                 upload
+                 (add-event-listener "progress"
+                                     (lambda (event)
+                                       (update-progress event content progress-id))
+                                     :false))
+          (chain xhr
+                 (add-event-listener "load"
+                                     (lambda (event)
+                                       (upload-success event xhr))
+                                     :false))
+          (chain xhr
+                 (add-event-listener "error"
+                                     upload-error
+                                     :false))
+          (chain xhr
+                 (add-event-listener "abort"
+                                     upload-error
+                                     :false))
+          (chain xhr
+                 (open "POST" url))
+          (chain xhr
+                 (set-request-header "X-File-Name"
+                                     (encode-u-r-i
+                                      (@ file
+                                         name))))
+          (chain xhr
+                 (set-request-header "X-Progress-Id"
+                                     progress-id))
+          ;; If we don't do this, Reblocks will consider
+          ;; this action call a usual POST request which
+          ;; should be redirected instead of returning
+          ;; a commands list:
+          (chain xhr
+                 (set-request-header "X-Requested-With"
+                                     "XMLHttpRequest"))
+          (chain xhr
+                 (send file))
+          :false)))))

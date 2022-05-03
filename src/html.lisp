@@ -152,39 +152,65 @@
     node)
   (:method ((node common-doc:italic))
     (let ((children (common-doc:children node)))
-      (unless (typep (first children)
-                     'markup)
-        (setf (common-doc:children node)
-              (append (list (make-markup2 node "*" "left"))
-                      children
+      (setf (common-doc:children node)
+            (append (unless (typep (first children)
+                                   'markup)
+                      (list (make-markup2 node "*" "left")))
+                    children
+                    (unless (typep (alexandria:lastcar children)
+                                   'markup)
                       (list (make-markup2 node "*" "right")))))
       node))
   (:method ((node common-doc:bold))
     (let ((children (common-doc:children node)))
-      (unless (typep (first children)
-                     'markup)
-        (setf (common-doc:children node)
-              (append (list (make-markup2 node "**" "left"))
-                      children
+      (setf (common-doc:children node)
+            (append (unless (typep (first children)
+                                   'markup)
+                      (list (make-markup2 node "**" "left")))
+                    children
+                    (unless (typep (alexandria:lastcar children)
+                                   'markup)
                       (list (make-markup2 node "**" "right")))))
       node))
   (:method ((node common-doc:code))
     (let ((children (common-doc:children node)))
-      (unless (typep (first children)
-                     'markup)
-        (setf (common-doc:children node)
-              (append (list (make-markup2 node "`" "left"))
-                      children
+      (setf (common-doc:children node)
+            (append (unless (typep (first children)
+                                   'markup)
+                      (list (make-markup2 node "`" "left")))
+                    children
+                    (unless (typep (alexandria:lastcar children)
+                                   'markup)
                       (list (make-markup2 node "`" "right")))))
       node))
   (:method ((node common-doc:strikethrough))
     (let ((children (common-doc:children node)))
-      (unless (typep (first children)
-                     'markup)
-        (setf (common-doc:children node)
-              (append (list (make-markup2 node "--" "left"))
-                      children
+      (setf (common-doc:children node)
+            (append (unless (typep (first children)
+                                   'markup)
+                      (list (make-markup2 node "--" "left")))
+                    children
+                    (unless (typep (alexandria:lastcar children)
+                                   'markup)
                       (list (make-markup2 node "--" "right")))))
+      node))
+  (:method ((node common-doc:web-link))
+    (let ((children (remove-if #'markup-p
+                               (common-doc:children node)))
+          (uri (common-doc:uri node)))
+      (setf (common-doc:children node)
+            (list (make-markup2 node "[" "left-bracket")
+                  (uiop:symbol-call :reblocks-text-editor/html/web-link
+                                    :make-visible-weblink
+                                    node
+                                    children
+                                    uri)
+                  (make-markup2 node "]" "right-bracket")
+                  (make-markup2 node "(" "left-paren")
+                  (make-markup2 node
+                                (quri:render-uri uri)
+                                "uri")
+                  (make-markup2 node ")" "right-paren")))
       node)))
 
 

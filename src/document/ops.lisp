@@ -3,6 +3,7 @@
   (:import-from #:common-doc
                 #:children)
   (:import-from #:scriba)
+  (:import-from #:reblocks-text-editor/blocks/progress)
   (:import-from #:reblocks-text-editor/utils/markdown
                 #:from-markdown
                 #:to-markdown)
@@ -12,6 +13,7 @@
                 #:remove-zero-spaces-unless-string-is-empty
                 #:+zero-width-space+)
   (:import-from #:reblocks-text-editor/html
+                #:add-markup-to
                 #:ensure-markup-nodes)
   (:import-from #:alexandria
                 #:length=
@@ -224,7 +226,8 @@
                                  current-cursor-position)))
                       (t
                        (error "Probably we should't get here.")))))
-                 (common-doc:image
+                 ((or common-doc:image
+                      reblocks-text-editor/blocks/progress::progress)
                   ;; We consider image has 1 character width,
                   ;; because it requires one arrow left or right hit to move
                   ;; cursor from one side of the image to another:
@@ -436,6 +439,8 @@
           sum (node-length child)))
   
   (:method ((node common-doc:image))
+    1)
+  (:method ((node reblocks-text-editor/blocks/progress::progress))
     1))
 
 
@@ -461,9 +466,8 @@
               right
               (common-doc:reference right-node)
               nil)
-        (list left-node
-              right-node)))))
-
+        (list (add-markup-to left-node)
+              (add-markup-to right-node))))))
 
 (defun split-nodes (nodes caret-position)
   "Returns two lists where first contains nodes before CARET-POSTION
@@ -577,40 +581,42 @@
 
    Used when somebody copy-n-pastes a new piece into the paragraph."
   (when node
-    (add-reference-ids document :to-node new-content)
+    (destructuring-bind (nodes-before nodes-after)
+        (split-nodes (common-doc::children node) cursor-position)
+      (add-reference-ids document :to-node new-content)
     
-    (let* ((plain-text (to-markdown node
-                                    ;; Do not eat the last space:
-                                    :trim-spaces nil))
-           (text-before-cursor (slice plain-text 0 cursor-position))
-           (text-after-cursor (slice plain-text cursor-position))
-           (nodes-before (common-doc:children (prepare-new-content document text-before-cursor)))
-           (nodes-after (common-doc:children (prepare-new-content document text-after-cursor)))
-           (node-for-cursor (common-doc:make-text reblocks-text-editor/utils/text::+zero-width-space+))
-           ;; Before update, we need to remove "empty" text nodes having only
-           ;; zero white-space. Otherwise, after the following text editing operation
-           ;; cursor will be moved to incorrect position, jumping one additional
-           ;; character to the right.
-           ;; NOTE: Previously I've removed empty nodes from whole new-nodes, including
-           ;; new-content. But changed this when added images editing.
-           (new-nodes (append
-                       (remove-if #'empty-text-node nodes-before)
-                       (list new-content
-                             node-for-cursor)
-                       (remove-if #'empty-text-node nodes-after))))
+      (let* (;; (plain-text (to-markdown node
+             ;;                          ;; Do not eat the last space:
+             ;;                          :trim-spaces nil))
+             ;; (text-before-cursor (slice plain-text 0 cursor-position))
+             ;; (text-after-cursor (slice plain-text cursor-position))
+             ;; (nodes-before (common-doc:children (prepare-new-content document text-before-cursor)))
+             ;; (nodes-after (common-doc:children (prepare-new-content document text-after-cursor)))
+             (node-for-cursor (common-doc:make-text reblocks-text-editor/utils/text::+zero-width-space+))
+             ;; Before update, we need to remove "empty" text nodes having only
+             ;; zero white-space. Otherwise, after the following text editing operation
+             ;; cursor will be moved to incorrect position, jumping one additional
+             ;; character to the right.
+             ;; NOTE: Previously I've removed empty nodes from whole new-nodes, including
+             ;; new-content. But changed this when added images editing.
+             (new-nodes (append
+                         (remove-if #'empty-text-node nodes-before)
+                         (list new-content
+                               node-for-cursor)
+                         (remove-if #'empty-text-node nodes-after))))
 
-      (add-reference-ids document :to-node node-for-cursor)
+        (add-reference-ids document :to-node node-for-cursor)
 
-      (update-node-content document node
-                           (make-common-doc-piece (common-doc:make-paragraph new-nodes)
-                                                  cursor-position))
-      (ensure-cursor-position-is-correct document
-                                         node-for-cursor
-                                         0
-                                         ;; :from-the-end t
-                                         )
-      ;; (place-cursor-after-the document new-content)
-      )))
+        (update-node-content document node
+                             (make-common-doc-piece (common-doc:make-paragraph new-nodes)
+                                                    cursor-position))
+        (ensure-cursor-position-is-correct document
+                                           node-for-cursor
+                                           0
+                                           ;; :from-the-end t
+                                           )
+        ;; (place-cursor-after-the document new-content)
+        ))))
 
 
 (defun append-children (widget to-node nodes-to-append)
@@ -1295,3 +1301,14 @@
              (t
               current-node))))
     (map-document document #'add-paragraph-if-needed)))
+
+
+(defun fill-empty-text-nodes-with-zero-space (document)
+  (flet ((add-space-if-needed (current-node depth)
+           (declare (ignore depth))
+           (when (typep current-node 'common-doc:text-node)
+             (when (zerop (length (common-doc:text current-node)))
+               (setf (common-doc:text current-node)
+                     reblocks-text-editor/utils/text::+zero-width-space+)))
+           current-node))
+    (map-document document #'add-space-if-needed)))

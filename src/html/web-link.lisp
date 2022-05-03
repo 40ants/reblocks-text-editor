@@ -36,18 +36,40 @@
         (mapc #'to-html (common-doc:children node)))))
 
 
-(defmethod common-doc:children :around ((node common-doc:web-link))
-  (if (and *render-markup*
-           (not (typep node 'visible-weblink)))
-      (let ((uri (common-doc:uri node)))
-        (list (make-markup2 node "[" "left-bracket")
-              (make-visible-weblink node
-                                    (call-next-method)
-                                    uri)
-              (make-markup2 node "]" "right-braket")
-              (make-markup2 node "(" "left-paren")
-              (make-markup2 node (quri:render-uri uri) "uri")
-              (make-markup2 node ")" "right-paren")))
-      (call-next-method)))
+;; (defmethod common-doc:children :around ((node common-doc:web-link))
+;;   (if (and *render-markup*
+;;            (not (typep node 'visible-weblink)))
+;;       (let ((uri (common-doc:uri node)))
+;;         (list (make-markup2 node "[" "left-bracket")
+;;               (make-visible-weblink node
+;;                                     (call-next-method)
+;;                                     uri)
+;;               (make-markup2 node "]" "right-braket")
+;;               (make-markup2 node "(" "left-paren")
+;;               (make-markup2 node (quri:render-uri uri) "uri")
+;;               (make-markup2 node ")" "right-paren")))
+;;       (call-next-method)))
 
 
+
+(defmethod reblocks-text-editor/html::add-markup-to ((node visible-weblink))
+  ;; To prevent infinite recursion, because web-link creates
+  ;; visible-link in it's add-markup-to method, we need to define
+  ;; this empty method for visible-weblink
+  node)
+
+
+(defmethod scriba.emitter:emit :before ((node common-doc:web-link) stream)
+  ;; Here we need to ensure there is uri
+  ;; in the metadata, because scriba's emitter renders it
+  ;; instead of uri slot:
+  (setf (common-doc:get-meta node "uri")
+        (quri:render-uri
+         (common-doc:uri node))))
+
+
+(defmethod scriba.emitter:emit ((node visible-weblink) stream)
+  ;; This empty method prevents rendering of the visible weblink into the
+  ;; document on disk. Because visible-weblink should only be visible
+  ;; when rendered to HTML.
+  (scriba.emitter::emit-children node stream))

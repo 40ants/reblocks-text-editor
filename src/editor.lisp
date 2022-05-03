@@ -4,7 +4,9 @@
   (:import-from #:common-html)
   (:import-from #:reblocks-parenscript)
   (:import-from #:reblocks-lass)
-  (:import-from #:reblocks-text-editor/html)
+  (:import-from #:reblocks-file-server)
+  (:import-from #:reblocks-text-editor/html
+                #:ensure-markup-nodes)
   (:import-from #:reblocks-text-editor/html/markdown-link)
   (:import-from #:reblocks-text-editor/html/web-link)
   (:import-from #:reblocks-text-editor/html/document-link)
@@ -12,7 +14,8 @@
   (:import-from #:reblocks-text-editor/frontend/js)
   (:import-from #:reblocks-text-editor/frontend/css)
   (:import-from #:reblocks-text-editor/document/copying)
-  (:import-from #:reblocks-text-editor/document/editable)
+  (:import-from #:reblocks-text-editor/document/editable
+                #:text-before-caret)
   (:import-from #:reblocks-text-editor/typed-pieces/common-doc
                 #:make-common-doc-piece)
   (:import-from #:reblocks-text-editor/document/ops
@@ -55,6 +58,12 @@
 (in-package #:reblocks-text-editor/editor)
 
 
+;; TODO: Figure out a better way to store uploads.
+;;       Probably, all code about storing documents should be moved from Hypernot
+;;       into the reblocks-text-editor?
+(defparameter +documents-root+ #P"~/Documents/hypernot/")
+
+
 (defun unwrap-content (node)
   "Returns a list of common doc node. If NODE is a common-doc:content-node,
    then it's children are returned wheren unwrap-content is applied to each
@@ -94,10 +103,10 @@ Second line
              :accessor document)))
 
 
-(reblocks/widget:defwidget editor-demo ()
-  ((editor :type editor
-           :initform (make-instance 'editor)
-           :reader editor-demo)))
+;; (reblocks/widget:defwidget editor-demo ()
+;;   ((editor :type editor
+;;            :initform (make-instance 'editor)
+;;            :reader editor-demo)))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; 
@@ -233,7 +242,9 @@ Second line
              url
              (list (common-doc:make-text title))))))))
     (t
-     (common-doc:make-text pasted-text))))
+     (let ((result (reblocks-text-editor/document/ops::parse-scriba-nodes
+                    (common-doc:make-text pasted-text))))
+       (common-doc:make-content result)))))
 
 
 (defgeneric paste-text (document path-or-node caret-position pasted-text)
@@ -249,25 +260,26 @@ Second line
 
 
 (defmethod paste-text (document (node common-doc:paragraph) cursor-position pasted-text)
-  (destructuring-bind (nodes-before nodes-after)
-      (ops::split-nodes (common-doc::children node) cursor-position)
-    (declare (ignore nodes-after))
-    (let* ((text-before (to-markdown (common-doc:make-content nodes-before)
-                                     ;; It is important to not trim a space,
-                                     ;; otherwise a space before the cursor will be lost:
-                                     :trim-spaces nil))
-           ;; Тут надо сначала поправить позицию курсора, потому что
-           ;; картинки которые перед ним, будут отрендерены в markdown как ![](someurl),
-           ;; а cursor-position прилетел с фронта, где под картинку выделяется 1 символ:
-           ;; Может сделать сначала сплит всех нод, а потом левую часть уже преобразовывать?
-           ;; (text-before (slice text 0 cursor-position))
-           (new-content (make-node-from-pasted-text text-before pasted-text))
-           ;; because nodes-before might include images which when rendered
-           ;; in markdown are bigger than 1 character
-           (new-cursor-position (length text-before)))
-      (ops::insert-into-paragraph document node
-                                  new-cursor-position
-                                  new-content))))
+  (let* ((text-before (text-before-caret document)
+                      ;; (to-markdown (common-doc:make-content nodes-before)
+                      ;;              ;; It is important to not trim a space,
+                      ;;              ;; otherwise a space before the cursor will be lost:
+                      ;;              :trim-spaces nil)
+                      )
+         ;; Тут надо сначала поправить позицию курсора, потому что
+         ;; картинки которые перед ним, будут отрендерены в markdown как ![](someurl),
+         ;; а cursor-position прилетел с фронта, где под картинку выделяется 1 символ:
+         ;; Может сделать сначала сплит всех нод, а потом левую часть уже преобразовывать?
+         ;; (text-before (slice text 0 cursor-position))
+         (new-content (ensure-markup-nodes
+                       (make-node-from-pasted-text text-before pasted-text)))
+         ;; because nodes-before might include images which when rendered
+         ;; in markdown are bigger than 1 character
+         ;; (new-cursor-position (length text-before))
+         )
+    (ops::insert-into-paragraph document node
+                                cursor-position
+                                new-content)))
 
 
 (defmethod paste-text (document (node common-doc:code-block) caret-position pasted-text)
@@ -366,6 +378,19 @@ Second line
   (:method ((widget editor) key-code node cursor-position)))
 
 
+(defun update-progress (document &key progress-id percent &allow-other-keys)
+  (log:debug "Updating progress" progress-id percent)
+  (let ((progress-node (ops::find-node-by-reference document progress-id)))
+    (cond
+      (progress-node
+       (setf (reblocks-text-editor/blocks/progress::percent progress-node)
+             percent)
+       (ops::replace-node document progress-node progress-node))
+      (t
+       (log:error "Unable to find PROGRESS node with reference ~A"
+                  progress-id)))))
+
+
 (defgeneric process-message-from-frontend (widget message-type &rest args &key version &allow-other-keys)
   (:method ((widget editor) message-type &rest args &key version &allow-other-keys)
     (let ((document (document widget)))
@@ -382,14 +407,16 @@ Second line
              (apply #'process-undo widget args))
             ((string-equal message-type "link")
              (apply #'process-link widget args))
+            ((string-equal message-type "update-progress")
+             (apply #'update-progress document args))
             (t
              (log:error "Don't know how to process message of this type"
                         message-type
                         args))))))))
 
 
-(defgeneric process-update (widget &key change-type new-html path cursor-position pasted-text &allow-other-keys)
-  (:method (widget &key change-type new-html path cursor-position pasted-text &allow-other-keys)
+(defgeneric process-update (widget &key)
+  (:method (widget &key change-type new-html path cursor-position pasted-text progress-id percent &allow-other-keys)
     (check-type cursor-position integer)
 
     (log:debug "Processing" new-html path cursor-position change-type)
@@ -463,6 +490,9 @@ Second line
         ((string= change-type
                   "start-new-paragraph")
          (start-new-paragraph document path))
+        ((string= change-type
+                  "update-progress")
+         (update-progress document progress-id percent))
         (t
          (process-usual-update document path new-html cursor-position)))
 
@@ -492,16 +522,50 @@ Second line
     (setf *widget*
           widget)
 
-
+    ;; TODO: надо придумать, как сделать настраиваемым этот URL
+    ;;       и директорию documents-root
+    ;;       Может сделать протокол из (SUPPORTS-UPLOAD-P document)
+    ;;       и (MEDIA-DIR document) и (MEDIA-URI document),
+    ;;       а создание роута унести в инициализацию приложения Hypernot?
+    (reblocks-file-server:make-route :uri "/images/"
+                                     :root +documents-root+)
+    
     (labels ((process-message (&rest args &key type &allow-other-keys)
                (let ((args (alexandria:remove-from-plist args :type)))
-                 (apply #'process-message-from-frontend widget type args))))
+                 (apply #'process-message-from-frontend widget type args)))
+             (upload-data (&rest args)
+               (log:debug "Processing uploaded data" args)
+               (let* ((request reblocks/request::*request*)
+                      (filename (quri:url-decode (reblocks/request:get-header "x-file-name")))
+                      (body (lack.request:request-raw-body request))
+                      (destination-file (uiop:merge-pathnames* filename
+                                                               +documents-root+))
+                      (content-length (lack.request:request-content-length request)))
+                 (alexandria:with-output-to-file (output destination-file
+                                                         :element-type (stream-element-type body)
+                                                         :if-exists :supersede)
+                   (alexandria:copy-stream body output :end content-length))
+                 (let* ((image-node (common-doc:make-image
+                                     (format nil "/images/~A"
+                                             (quri:url-encode filename))))
+                        (progress-id (reblocks/request:get-header "x-progress-id"))
+                        (progress-node (ops::find-node-by-reference document progress-id)))
+                   (reblocks-text-editor/document/ops::add-reference-ids document
+                                                                         :to-node image-node)
+                   (ops::replace-node document
+                                      progress-node
+                                      image-node))
+                 (log:debug "Data saved to" destination-file))))
       (let ((action-code (reblocks/actions:make-action #'process-message))
+            (upload-code (reblocks/actions:make-action #'upload-data))
             ;; We need this flag to make sure our document will have
             ;; a visible markup on active paragraph.
             (reblocks-text-editor/html::*render-markup* t))
         (reblocks/html:with-html
           (:div :class "content"
+                :ondragover "event.preventDefault(); return false"
+                :ondrop "uploadFile(event); return false"
+                :data-upload-code upload-code
                 :data-action-code action-code
                 :data-version (reblocks-text-editor/document/editable::content-version document)
                 :contenteditable ""
@@ -509,23 +573,24 @@ Second line
                 (reblocks-text-editor/html::to-html document)))))))
 
 
-(defmethod reblocks/widget:render ((widget editor-demo))
-  (labels ((reset-text (&rest args)
-             (declare (ignore args))
-             (setf (slot-value (editor-demo widget) 'document)
-                   (make-initial-document))
-             (reblocks/widget:update (editor-demo widget))))
+;; (defmethod reblocks/widget:render ((widget editor-demo))
+
+;;   (labels ((reset-text (&rest args)
+;;              (declare (ignore args))
+;;              (setf (slot-value (editor-demo widget) 'document)
+;;                    (make-initial-document))
+;;              (reblocks/widget:update (editor-demo widget))))
     
-    (reblocks/html:with-html
-      (:h1 "Experimental HTML editor")
-      (:h2 "Using Common Lisp + Reblocks")
-      (reblocks/widget:render (editor-demo widget))
-
-      (:p :id "debug"
-          "Path will be shown here.")
-
-      (:p (:button :onclick (reblocks/actions:make-js-action #'reset-text)
-                   "Reset Text")))))
+;;     (reblocks/html:with-html
+;;       (:h1 "Experimental HTML editor")
+;;       (:h2 "Using Common Lisp + Reblocks")
+;;       (reblocks/widget:render (editor-demo widget))
+      
+;;       (:p :id "debug"
+;;           "Path will be shown here.")
+      
+;;       (:p (:button :onclick (reblocks/actions:make-js-action #'reset-text)
+;;                    "Reset Text")))))
 
 
 (defmethod reblocks/dependencies:get-dependencies ((widget editor))

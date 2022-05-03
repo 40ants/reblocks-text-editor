@@ -11,7 +11,8 @@
                 #:+zero-width-space+
                 #:remove-html-tags)
   (:import-from #:cl-ppcre)
-  (:import-from #:reblocks-text-editor/document/ops)
+  (:import-from #:reblocks-text-editor/document/ops
+                #:fill-empty-text-nodes-with-zero-space)
   (:import-from #:reblocks-text-editor/typed-pieces/scribdown
                 #:scribdown-piece)
   (:import-from #:reblocks-text-editor/typed-pieces/common-doc
@@ -193,6 +194,11 @@
               (append (common-doc:children processed-content)
                       (list empty-node))))
       (decf cursor-position-decrement))
+
+    ;; Sometimes, when editing text around images, empty text nodes are created.
+    ;; When this happens editor can't process paragraph breaks.
+    ;; Нет, как-то это не очень помогло :(
+    ;; (fill-empty-text-nodes-with-zero-space processed-content)
 
     ;; TODO: with real markup nodes we don't need this:
     ;; (incf cursor-position-decrement

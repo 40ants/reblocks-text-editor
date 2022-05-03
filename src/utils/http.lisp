@@ -3,7 +3,9 @@
   (:import-from #:dexador)
   (:import-from #:clss)
   (:import-from #:serapeum
-                #:length>=))
+                #:length>=)
+  (:import-from #:str
+                #:starts-with-p))
 (in-package #:reblocks-text-editor/utils/http)
 
 
@@ -17,7 +19,7 @@
         
         (let ((title nil)
               (content-type (gethash "content-type" headers)))
-          (when (string-equal content-type "text/html")
+          (when (starts-with-p "text/html" content-type :ignore-case t)
             (let* ((tree (plump:parse data))
                    (titles (clss:select "title" tree)))
               (setf title
@@ -27,4 +29,5 @@
           (values title
                   content-type)))
     (error ()
+      (log:error "Unable to get title for" url)
       nil)))
