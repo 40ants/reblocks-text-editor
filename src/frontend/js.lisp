@@ -89,12 +89,12 @@
                          " is larger then version " version
                          " of the command")))
             (t
-              (let* ((html-string (@ args html))
-                     (html (from-html html-string)))
-                (chain console
-                       (log "INSERTING " html-string))
-                (chain after-node
-                       (insert-adjacent-h-t-m-l position html-string)))))))
+             (let* ((html-string (@ args html))
+                    (html (from-html html-string)))
+               (chain console
+                      (log "INSERTING " html-string))
+               (chain after-node
+                      (insert-adjacent-h-t-m-l position html-string)))))))
       
       (defun delete-node (args)
         (let* ((version (@ args version))
@@ -414,7 +414,7 @@
         (let ((path (calculate-path))
               (position (caret-position)))
           (chain console
-                 (log "New path" path))
+                 (log "New path: " path " and position: " position))
           (chain (j-query "#debug")
                  (html (chain -j-s-o-n
                               (stringify
@@ -701,32 +701,108 @@
         (change-text event "modify"))
 
       (defun at-the-paragraph-beginning ()
-        (let* ((paragraph (get-current-paragraph))
-               (position (caret-position)))
-          (when (and paragraph
-                     (>= position 0))
-            (let* ((content (@ paragraph
-                               inner-text))
-                   (has-only-zero-spaces t))
-              (loop for idx from (1- position) downto 0
-                    for symbol = (elt content idx)
-                    unless (= symbol "​")
-                      do (setf has-only-zero-spaces nil))
-              (values has-only-zero-spaces)))))
+        (let* ((selection (chain window (get-selection)))
+               (node (@ selection anchor-node))
+               (offset (@ selection anchor-offset)))
+          (unless (= (@ selection type)
+                     "Caret")
+            (chain console
+                   (warn "Probably at-the-paragraph-beginning will not work correctly because selection type is not \"Caret\""
+                         selection)))
+          (case (@ node node-type)
+            ;; element
+            (1
+             (cond
+               ((= (@ node node-name)
+                   "P")
+                (= offset 0))
+               ((chain console
+                       (warn "Caret in element node but it is not P"
+                             selection))
+                (values :false))))
+            ;; text node
+            (3
+             ;; TODO: probably here we can do some optimizations
+             ;; by looking if this text node is the first node of the paragraph
+             ;; and then checking zero spaces only inside this node
+             (let* ((paragraph (get-current-paragraph))
+                    (position (caret-position)))
+               (when (and paragraph
+                          (>= position 0))
+                 (let* ((content (@ paragraph
+                                    inner-text))
+                        (has-only-zero-spaces t))
+                   (loop for idx from (1- position) downto 0
+                         for symbol = (elt content idx)
+                         unless (= symbol "​")
+                           do (setf has-only-zero-spaces nil))
+                   (values has-only-zero-spaces)))))
+            (t
+             (chain console
+                    (warn "Unable to determine if caret is at paragraph beginning"
+                          selection))
+             (values :false))))
+        
+        ;; This version does not work when there are noneditable nodes
+        ;; in the paragraph before caret:
+        ;; 
+        ;; (let* ((paragraph (get-current-paragraph))
+        ;;        (position (caret-position)))
+        ;;   (when (and paragraph
+        ;;              (>= position 0))
+        ;;     (let* ((content (@ paragraph
+        ;;                        inner-text))
+        ;;            (has-only-zero-spaces t))
+        ;;       (loop for idx from (1- position) downto 0
+        ;;             for symbol = (elt content idx)
+        ;;             unless (= symbol "​")
+        ;;               do (setf has-only-zero-spaces nil))
+        ;;       (values has-only-zero-spaces))))
+        )
       
       (defun at-the-block-beginning ()
-        (let* ((node (get-current-block-node))
-               (position (caret-position)))
-          (when (and node
-                     (>= position 0))
-            (let* ((content (@ node
-                               inner-text))
-                   (has-only-zero-spaces t))
-              (loop for idx from (1- position) downto 0
-                    for symbol = (elt content idx)
-                    unless (= symbol "​")
-                      do (setf has-only-zero-spaces nil))
-              (values has-only-zero-spaces)))))
+        (let* ((selection (chain window (get-selection)))
+               (node (@ selection anchor-node))
+               (offset (@ selection anchor-offset)))
+          (unless (= (@ selection type)
+                     "Caret")
+            (chain console
+                   (warn "Probably at-the-block-beginning will not work correctly because selection type is not \"Caret\""
+                         selection)))
+          (case (@ node node-type)
+            ;; element
+            (1
+             (cond
+               ((= (@ node node-name)
+                   "P")
+                (= offset 0))
+               ((chain console
+                       (warn "Caret in element node but it is not P"
+                             selection))
+                (values :false))))
+            ;; text node
+            (3
+             ;; TODO: probably here we can do some optimizations
+             ;; by looking if this text node is the first node of the block
+             ;; and then checking zero spaces only inside this node
+             (let* ((paragraph (get-current-block-node))
+                    (position (caret-position)))
+               (when (and paragraph
+                          (>= position 0))
+                 (let* ((content (@ paragraph
+                                    inner-text))
+                        (has-only-zero-spaces t))
+                   (loop for idx from (1- position) downto 0
+                         for symbol = (elt content idx)
+                         unless (= symbol "​")
+                           do (setf has-only-zero-spaces nil))
+                   (values has-only-zero-spaces)))))
+            (t
+             (chain console
+                    (warn "Unable to determine if caret is at block beginning"
+                          selection))
+             (values :false)))))
+      
       
       (defun before-input (event)
         (let ((type (@ event
