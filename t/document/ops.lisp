@@ -39,7 +39,9 @@
   (:import-from #:reblocks-text-editor/typed-pieces/common-doc
                 #:make-common-doc-piece)
   (:import-from #:reblocks-text-editor/typed-pieces/common-doc-impl
-                #:decrement-of-placeholders-before-caret))
+                #:decrement-of-placeholders-before-caret)
+  (:import-from #:reblocks-text-editor/html
+                #:add-markup-to))
 (in-package #:reblocks-text-editor-tests/document/ops)
 
 
@@ -384,16 +386,20 @@ Third."))
 
 
 (deftest test-split-text-nodes-with-markup ()
+  ;; foobar***blah*minor**
   (let ((nodes (list (make-text "foo")
                      (make-text "bar")
-                     (common-doc:make-bold
-                      (list
-                       (common-doc:make-italic
-                        (make-text "blah"))
-                       (make-text "minor"))))))
+                     (add-markup-to
+                      (common-doc:make-bold
+                       (list
+                        (add-markup-to
+                         (common-doc:make-italic
+                          (make-text "blah")))
+                        (make-text "minor")))))))
     (testing "When caret is at the end"
       (destructuring-bind (left right)
-          (split-nodes nodes 7)
+          ;; we'll cut off "b" from "blah"
+          (split-nodes nodes 10)
         (assert-that left
                      (contains (has-slots 'common-doc:text "foo")
                                (has-slots 'common-doc:text "bar")
@@ -401,24 +407,32 @@ Third."))
                                 (has-type 'common-doc:bold)
                                 (has-slots 'common-doc:children
                                            (contains
+                                            (has-slots 'common-doc:text "**")
                                             (has-all
                                              (has-type 'common-doc:italic)
                                              (has-slots 'common-doc:children
                                                         (contains
-                                                         (has-slots 'common-doc:text "b")))))))))
+                                                         (has-slots 'common-doc:text "*")
+                                                         (has-slots 'common-doc:text "b")
+                                                         (has-slots 'common-doc:text "*"))))
+                                            (has-slots 'common-doc:text "**"))))))
         (assert-that right
                      (contains (has-all
                                 (has-type 'common-doc:bold)
                                 (has-slots 'common-doc:children
                                            (contains
+                                            (has-slots 'common-doc:text "**")
                                             (has-all
                                              (has-type 'common-doc:italic)
                                              (has-slots 'common-doc:children
                                                         (contains
-                                                         (has-slots 'common-doc:text "lah"))))
+                                                         (has-slots 'common-doc:text "*")
+                                                         (has-slots 'common-doc:text "lah")
+                                                         (has-slots 'common-doc:text "*"))))
                                             (has-all
                                              (has-type 'common-doc:text-node)
-                                             (has-slots 'common-doc:text "minor")))))))))))
+                                             (has-slots 'common-doc:text "minor"))
+                                            (has-slots 'common-doc:text "**"))))))))))
 
 
 

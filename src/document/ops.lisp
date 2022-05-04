@@ -446,11 +446,12 @@
 
 (defgeneric split-node (node caret-position)
   (:method ((node common-doc:text-node) (caret-position integer))
-    (let ((text (common-doc:text node)))
-      (list (common-doc:make-text (subseq text 0 (min caret-position
-                                                      (1- (length text)))))
-            (common-doc:make-text (subseq text (min caret-position
-                                                    (1- (length text))))))))
+    (let* ((text (common-doc:text node))
+           (left-node (common-doc:make-text (subseq text 0 (min caret-position
+                                                                (1- (length text))))))
+           (right-node (common-doc:make-text (subseq text (min caret-position
+                                                               (1- (length text)))))))
+      (list left-node right-node)))
   (:method ((node common-doc:content-node) (caret-position integer))
     (destructuring-bind (left right)
         (split-nodes (children node) caret-position)
@@ -532,17 +533,37 @@
           (t
            (destructuring-bind (nodes-before nodes-after)
                (split-nodes nodes cursor-position)
-
+             
              ;; We need to add zero width spaces because
              ;; otherwise it will be impossible to set cursor
              ;; into the paragraphs:
-             (unless nodes-before
-               (push (common-doc:make-text +zero-width-space+)
-                     nodes-before))
+             (cond
+               ((null nodes-before)
+                (push (common-doc:make-text +zero-width-space+)
+                      nodes-before))
+               ;; Sometimes during the split we might get an empty
+               ;; text node and to be sure paragraph will be visible
+               ;; when rendered to HTML, we need to insert a +zero-width-space+
+               ;; ((and (length= 1 nodes-before)
+               ;;       (typep (first nodes-before)
+               ;;              'common-doc:text-node)
+               ;;       (length= 0 (common-doc:text (first nodes-before))))
+               ;;  (setf (common-doc:text (first nodes-before))
+               ;;        +zero-width-space+))
+               )
              
-             (unless nodes-after
-               (push (common-doc:make-text +zero-width-space+)
-                     nodes-after))
+             (cond
+               ((null nodes-after)
+                (push (common-doc:make-text +zero-width-space+)
+                      nodes-after))
+               ;; Same as with NODES-BEFORE
+               ;; ((and (length= 1 nodes-after)
+               ;;       (typep (first nodes-after)
+               ;;              'common-doc:text-node)
+               ;;       (length= 0 (common-doc:text (first nodes-after))))
+               ;;  (setf (common-doc:text (first nodes-after))
+               ;;        +zero-width-space+))
+               )
              
              (let ((new-paragraph (common-doc:make-paragraph nodes-after)))
                (loop for node in nodes-before
