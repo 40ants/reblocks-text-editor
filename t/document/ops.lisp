@@ -13,6 +13,7 @@
   (:import-from #:reblocks-text-editor/editor
                 #:make-document-from-markdown-string)
   (:import-from #:common-doc
+                #:make-image
                 #:make-content
                 #:make-list-item
                 #:make-unordered-list
@@ -22,7 +23,9 @@
   (:import-from #:alexandria
                 #:length=)
   (:import-from #:reblocks-text-editor/document/ops
+                #:find-node-at-position
                 #:parse-scriba-nodes
+                #:split-node
                 #:split-nodes
                 #:flatten-nodes
                 #:map-document
@@ -368,14 +371,17 @@ Third."))
                     (hamcrest/rove:has-length 0))))
     
     (testing "When caret is at the beginning"
-      (assert-that (split-nodes nodes 0)
-                   (contains
-                    ;; The first list should be empty, because
-                    ;; caret is at the beginning:
-                    (hamcrest/rove:has-length 0)
-                    (contains (has-slots 'common-doc:text "foo")
-                              (has-slots 'common-doc:text "bar")
-                              (has-slots 'common-doc:text "blah")))))
+      (destructuring-bind (left right)
+          (split-nodes nodes 0)
+        (assert-that left
+                     ;; The first list should be empty, because
+                     ;; caret is at the beginning:
+                     (hamcrest/rove:has-length 0))
+        (assert-that right
+                     (contains (has-slots 'common-doc:text "foo")
+                               (has-slots 'common-doc:text "bar")
+                               (has-slots 'common-doc:text "blah")))))
+    
     (testing "When caret is at the middle of \"blah\""
       (assert-that (split-nodes nodes 7)
                    (contains
@@ -396,9 +402,8 @@ Third."))
                          (common-doc:make-italic
                           (make-text "blah")))
                         (make-text "minor")))))))
-    (testing "When caret is at the end"
+    (testing "When caret is after the \"b\" symbol of \"blah\""
       (destructuring-bind (left right)
-          ;; we'll cut off "b" from "blah"
           (split-nodes nodes 10)
         (assert-that left
                      (contains (has-slots 'common-doc:text "foo")
@@ -435,6 +440,34 @@ Third."))
                                             (has-slots 'common-doc:text "**"))))))))))
 
 
+(deftest test-split-empty-text-node-should-not-duplicate-it ()
+  (let ((node (make-text "" :reference "initial")))
+    (destructuring-bind (left right)
+        (split-node node 0)
+      (ok (not (eq left
+                   right)))
+      (assert-that left
+                   (has-slots 'common-doc:text ""
+                              'common-doc:reference nil))
+      (assert-that right
+                   (has-slots 'common-doc:text ""
+                              'common-doc:reference nil)))))
+
+
+(deftest test-split-empty-text-node-should-not-duplicate-it-2 ()
+  ;; This test like the previous one, but checks SPLIT-NODES instead of a single SPLIT-NODE
+  (let ((nodes (list (make-text "" :reference "initial"))))
+    (destructuring-bind (left right)
+        (split-nodes nodes 0)
+      (ok (not (eq (first left)
+                   (first right))))
+      (assert-that left
+                   (contains (has-slots 'common-doc:text ""
+                                        'common-doc:reference nil)))
+      (assert-that right
+                   (contains (has-slots 'common-doc:text ""
+                                        'common-doc:reference nil))))))
+
 
 (deftest test-decrement-by-placeholders
   (let ((text "Image попробуем в середине строки: @placeholder[ref=some]() another text and @placeholder[ref=ba]() another placeholder."))
@@ -454,3 +487,18 @@ Third."))
                   (has-slots 'common-doc:text "Image: ")
                   (has-type 'reblocks-text-editor/blocks/placeholder::placeholder)
                   (has-slots 'common-doc:text " another ![](")))))
+
+
+(deftest test-find-node-at-position-1
+  (testing "When paragraph contains an image and then text node"
+    (let* ((image (make-image "some.jpg"))
+           (text (make-text ""))
+           (node (make-paragraph
+                  (list image
+                        text))))
+      (multiple-value-bind (current-node new-pos)
+          (find-node-at-position node 0)
+        ;; Cursor is before the image thus this image node
+        ;; should be returned
+        (ok (eql current-node image))
+        (ok (= new-pos 0))))))

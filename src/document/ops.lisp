@@ -181,61 +181,39 @@
 
 (defun find-node-at-position (node cursor-position)
   (let ((last-visited-node nil)
-        (last-visited-node-content-length nil)
         (current-cursor-position cursor-position))
     (labels ((recursive-find (node)
                (setf last-visited-node
                      node)
               
                (etypecase node
-                 ((or common-doc:text-node
-                      commondoc-markdown/raw-html:raw-inline-html)
-                  (let* ((text (typecase node
-                                 (commondoc-markdown/raw-html:raw-inline-html
-                                  (commondoc-markdown/raw-html:html node))
-                                 (common-doc:text-node
-                                  (common-doc:text node))))
-                         (content-length
-                           (length text)))
-                    (setf last-visited-node-content-length
-                          content-length)
-                   
+                 (node-with-children
+                  ;; We need this render-markup flag to
+                  ;; place cursor propertly after any
+                  ;; markup elements:
+                  (cond
+                    ((children node)
+                     (mapc #'recursive-find
+                           (children node)))
+
+                    ;; The case, when cursor points to the empty
+                    ;; node, like a new paragraph with no content:
+                    ((zerop current-cursor-position)
+                     (return-from find-node-at-position
+                       (values node
+                               current-cursor-position)))
+                    (t
+                     (error "Probably we should't get here."))))
+                 (t
+                  (let* ((content-length
+                           (node-length node)))
                     (if (<= current-cursor-position
                             content-length)
                         (return-from find-node-at-position
                           (values node
                                   current-cursor-position))
                         (decf current-cursor-position
-                              content-length))))
-                 (node-with-children
-                  ;; We need this render-markup flag to
-                  ;; place cursor propertly after any
-                  ;; markup elements:
-                  (let (;; (reblocks-text-editor/html::*render-markup* t)
-                        )
-                    (cond
-                      ((children node)
-                       (mapc #'recursive-find
-                             (children node)))
-
-                      ;; The case, when cursor points to the empty
-                      ;; node, like a new paragraph with no content:
-                      ((zerop current-cursor-position)
-                       (return-from find-node-at-position
-                         (values node
-                                 current-cursor-position)))
-                      (t
-                       (error "Probably we should't get here.")))))
-                 ((or common-doc:image
-                      reblocks-text-editor/blocks/progress::progress)
-                  ;; We consider image has 1 character width,
-                  ;; because it requires one arrow left or right hit to move
-                  ;; cursor from one side of the image to another:
-                  (setf last-visited-node-content-length
-                        1)
-                  (decf current-cursor-position
-                        last-visited-node-content-length)
-                  node))))
+                              content-length)))))))
      
       (recursive-find node)
       (values last-visited-node
@@ -434,6 +412,9 @@
   (:method ((node common-doc:text-node))
     (length (common-doc:text node)))
   
+  (:method ((node commondoc-markdown/raw-html:raw-inline-html))
+    (length (commondoc-markdown/raw-html:html node)))
+  
   (:method ((node common-doc:content-node))
     (loop for child in (children node)
           sum (node-length child)))
@@ -448,9 +429,9 @@
   (:method ((node common-doc:text-node) (caret-position integer))
     (let* ((text (common-doc:text node))
            (left-node (common-doc:make-text (subseq text 0 (min caret-position
-                                                                (1- (length text))))))
+                                                                (length text)))))
            (right-node (common-doc:make-text (subseq text (min caret-position
-                                                               (1- (length text)))))))
+                                                               (length text))))))
       (list left-node right-node)))
   (:method ((node common-doc:content-node) (caret-position integer))
     (destructuring-bind (left right)
@@ -485,19 +466,47 @@
            for node-length = (node-length node)
            for current-caret = caret-position
              then (- current-caret prev-node-length)
-           do (setf prev-node-length node-length)
-              ;; (format t "node: ~A current-caret: ~A~%"
+           do ;; (format t "node: ~A current-caret: ~A~%"
               ;;         node
               ;;         current-caret)
-           if (>= current-caret node-length)
-             do (collect-left node)
-           if (< 0 current-caret node-length)
-             do (destructuring-bind (left right)
-                    (split-node node current-caret)
-                  (collect-left left)
-                  (collect-right right))
-           if (<= current-caret 0)
-             do (collect-right node)))))
+              (cond
+                ((or (< 0 current-caret node-length)
+                     (and (zerop current-caret)
+                          (zerop node-length)))
+                 (destructuring-bind (left right)
+                     (split-node node current-caret)
+                   (collect-left left)
+                   (collect-right right)))
+                ((>= current-caret node-length)
+                 (collect-left node))
+                ((<= current-caret 0)
+                 (collect-right node)))
+              
+              (setf prev-node-length node-length)))))
+
+
+(defun ensure-at-least-one-zero-space (nodes)
+  "Ensures NODES contains at least one non-empty text-node
+   or a node of other type.
+
+   It might replace whole sequence with new one
+   or modify original text nodes."
+  (cond
+    ((null nodes)
+     (list
+      (common-doc:make-text +zero-width-space+)))
+    ;; Sometimes during the split we might get an empty
+    ;; text node and to be sure paragraph will be visible
+    ;; when rendered to HTML, we need to insert a +zero-width-space+
+    ((and (length= 1 nodes)
+          (typep (first nodes)
+                 'common-doc:text-node)
+          (length= 0 (common-doc:text (first nodes))))
+     (setf (common-doc:text (first nodes))
+           +zero-width-space+)
+     (values nodes))
+    (t
+     (values nodes))))
 
 
 (defun split-paragraph (document path new-html cursor-position &key dont-escape-from-list-item)
@@ -533,39 +542,12 @@
           (t
            (destructuring-bind (nodes-before nodes-after)
                (split-nodes nodes cursor-position)
-             
              ;; We need to add zero width spaces because
              ;; otherwise it will be impossible to set cursor
              ;; into the paragraphs:
-             (cond
-               ((null nodes-before)
-                (push (common-doc:make-text +zero-width-space+)
-                      nodes-before))
-               ;; Sometimes during the split we might get an empty
-               ;; text node and to be sure paragraph will be visible
-               ;; when rendered to HTML, we need to insert a +zero-width-space+
-               ;; ((and (length= 1 nodes-before)
-               ;;       (typep (first nodes-before)
-               ;;              'common-doc:text-node)
-               ;;       (length= 0 (common-doc:text (first nodes-before))))
-               ;;  (setf (common-doc:text (first nodes-before))
-               ;;        +zero-width-space+))
-               )
-             
-             (cond
-               ((null nodes-after)
-                (push (common-doc:make-text +zero-width-space+)
-                      nodes-after))
-               ;; Same as with NODES-BEFORE
-               ;; ((and (length= 1 nodes-after)
-               ;;       (typep (first nodes-after)
-               ;;              'common-doc:text-node)
-               ;;       (length= 0 (common-doc:text (first nodes-after))))
-               ;;  (setf (common-doc:text (first nodes-after))
-               ;;        +zero-width-space+))
-               )
-             
-             (let ((new-paragraph (common-doc:make-paragraph nodes-after)))
+             (let* ((nodes-before (ensure-at-least-one-zero-space nodes-before))
+                    (nodes-after (ensure-at-least-one-zero-space nodes-after))
+                    (new-paragraph (common-doc:make-paragraph nodes-after)))
                (loop for node in nodes-before
                      do (add-reference-ids document
                                            :to-node node))
@@ -1091,7 +1073,11 @@
   (replace-node-content document
                         node
                         new-content)
-  (values node cursor-position))
+  ;; Here we have no any cursor position.
+  ;; Probably, this method is not called anywhere
+  (error "This should not be called?")
+  ;; (values node 0)
+  )
 
 
 (defmethod update-node-content ((document reblocks-text-editor/document/editable::editable-document)
