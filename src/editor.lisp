@@ -81,7 +81,8 @@
   (let* ((content (reblocks-text-editor/utils/markdown::from-markdown string))
          (doc (make-instance 'reblocks-text-editor/document/editable::editable-document
                              :children (unwrap-content content))))
-    
+
+    (ensure-markup-nodes doc)
     (reblocks-text-editor/document/ops::add-reference-ids doc)))
 
 
