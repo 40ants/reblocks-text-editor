@@ -892,57 +892,63 @@
                (log "Uploading" event))
         (chain event prevent-default)
         
-        (let* ((content (get-editor-content-node (@ event target)))
-               (upload-code (@ content dataset upload-code))
-               (url (get-action-url upload-code))
-               (progress-id (+ "pr" (create-random-id)))
-               (file (elt
-                      (@ event
-                         data-transfer
-                         files)
-                      0))
-               (xhr (new -x-m-l-http-request)))
-          
-          (paste-text event (+ "@progress[ref=\""
-                               progress-id
-                               "\"]()"))
-          
-          (chain xhr
-                 upload
-                 (add-event-listener "progress"
-                                     (lambda (event)
-                                       (update-progress event content progress-id))
-                                     :false))
-          (chain xhr
-                 (add-event-listener "load"
-                                     (lambda (event)
-                                       (upload-success event xhr))
-                                     :false))
-          (chain xhr
-                 (add-event-listener "error"
-                                     upload-error
-                                     :false))
-          (chain xhr
-                 (add-event-listener "abort"
-                                     upload-error
-                                     :false))
-          (chain xhr
-                 (open "POST" url))
-          (chain xhr
-                 (set-request-header "X-File-Name"
-                                     (encode-u-r-i
-                                      (@ file
-                                         name))))
-          (chain xhr
-                 (set-request-header "X-Progress-Id"
-                                     progress-id))
-          ;; If we don't do this, Reblocks will consider
-          ;; this action call a usual POST request which
-          ;; should be redirected instead of returning
-          ;; a commands list:
-          (chain xhr
-                 (set-request-header "X-Requested-With"
-                                     "XMLHttpRequest"))
-          (chain xhr
-                 (send file))
-          :false)))))
+        (let ((block (go-up-to-block-node (@ event target))))
+          (cond
+            ((= (@ block node-name)
+                "P")
+             (let* ((content (get-editor-content-node (@ event target)))
+                    (upload-code (@ content dataset upload-code))
+                    (url (get-action-url upload-code))
+                    (progress-id (+ "pr" (create-random-id)))
+                    (file (elt
+                           (@ event
+                              data-transfer
+                              files)
+                           0))
+                    (xhr (new -x-m-l-http-request)))
+           
+               (paste-text event (+ "@progress[ref=\""
+                                    progress-id
+                                    "\"]()"))
+           
+               (chain xhr
+                      upload
+                      (add-event-listener "progress"
+                                          (lambda (event)
+                                            (update-progress event content progress-id))
+                                          :false))
+               (chain xhr
+                      (add-event-listener "load"
+                                          (lambda (event)
+                                            (upload-success event xhr))
+                                          :false))
+               (chain xhr
+                      (add-event-listener "error"
+                                          upload-error
+                                          :false))
+               (chain xhr
+                      (add-event-listener "abort"
+                                          upload-error
+                                          :false))
+               (chain xhr
+                      (open "POST" url))
+               (chain xhr
+                      (set-request-header "X-File-Name"
+                                          (encode-u-r-i
+                                           (@ file
+                                              name))))
+               (chain xhr
+                      (set-request-header "X-Progress-Id"
+                                          progress-id))
+               ;; If we don't do this, Reblocks will consider
+               ;; this action call a usual POST request which
+               ;; should be redirected instead of returning
+               ;; a commands list:
+               (chain xhr
+                      (set-request-header "X-Requested-With"
+                                          "XMLHttpRequest"))
+               (chain xhr
+                      (send file))
+               :false))
+            (t
+             (alert (+ "You can't drop image into " (@ block node-name) " blocks.")))))))))
