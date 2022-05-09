@@ -329,7 +329,16 @@
         (let* ((selection (chain window
                                  (get-selection)))
                (node (@ selection
-                        base-node)))
+                        anchor-node)))
+          (when (= (@ node node-type)
+                   ;; element
+                   1)
+            ;; Sometimes a "content" node becomes anchor
+            ;; but actual selected node is it's child:
+            (setf node
+                  (elt (@ node child-nodes)
+                       (@ selection
+                          anchor-offset))))
           (go-up-to-block-node node)))
 
       (defun caret-position (options)
@@ -632,11 +641,14 @@
         (let* ((default-keymap (@ window default-keymap))
                (code-block-keymap (@ window code-block-keymap))
                (current-node (get-current-block-node))
-               (keymap (if (= (@ current-node tag-name)
-                              "PRE")
-                           (append code-block-keymap
-                                   default-keymap)
-                           default-keymap))
+               (keymap (progn
+                         (unless current-node
+                           debugger)
+                         (if (= (@ current-node tag-name)
+                                "PRE")
+                             (append code-block-keymap
+                                     default-keymap)
+                             default-keymap)))
                (handler-called false))
           (loop with handler-called = false
                 for item in keymap

@@ -495,9 +495,7 @@ Second line
                   "update-progress")
          (update-progress document progress-id percent))
         (t
-         (process-usual-update document path new-html cursor-position)))
-
-      (on-document-update widget))))
+         (process-usual-update document path new-html cursor-position))))))
 
 
 (defgeneric process-shortcut (widget &key key-code path cursor-position &allow-other-keys)
@@ -533,7 +531,8 @@ Second line
     
     (labels ((process-message (&rest args &key type &allow-other-keys)
                (let ((args (alexandria:remove-from-plist args :type)))
-                 (apply #'process-message-from-frontend widget type args)))
+                 (apply #'process-message-from-frontend widget type args)
+                 (on-document-update widget)))
              (upload-data (&rest args)
                (log:debug "Processing uploaded data" args)
                (let* ((request reblocks/request::*request*)
@@ -556,7 +555,9 @@ Second line
                    (ops::replace-node document
                                       progress-node
                                       image-node))
-                 (log:debug "Data saved to" destination-file))))
+                 (log:debug "Data saved to" destination-file))
+               (on-document-update widget)))
+      
       (let ((action-code (reblocks/actions:make-action #'process-message))
             (upload-code (reblocks/actions:make-action #'upload-data))
             ;; We need this flag to make sure our document will have
