@@ -1340,3 +1340,35 @@
                current-node)))
     (map-document document #'remove-old-caret)
     (map-document document #'add-new-caret)))
+
+
+(defun insert-char (document key)
+  (check-type key string)
+  (unless (length= 1 key)
+    (error "KEY should be a single character string"))
+  
+  (flet ((search-caret (current-node depth)
+           (declare (ignore depth))
+           (cond
+             ((typep current-node 'reblocks-text-editor/blocks/caret::caret)
+              (let* ((child (reblocks-text-editor/blocks/caret::child current-node))
+                     (position (reblocks-text-editor/blocks/caret::caret-position current-node))
+                     (new-position (1+ position)))
+                (etypecase child
+                  (common-doc:text-node
+                   (let ((text (common-doc:text child)))
+                     (setf (common-doc:text child)
+                           (concatenate 'string
+                                        (subseq text 0 position)
+                                        key
+                                        (subseq text position)))
+                     (setf (reblocks-text-editor/blocks/caret::caret-position current-node)
+                           new-position)
+                     (dom::update-node document child)
+                     (ensure-cursor-position-is-correct document
+                                                        child
+                                                        new-position))))
+                (values current-node)))
+             (t
+              current-node))))
+    (map-document document #'search-caret)))

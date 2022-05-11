@@ -410,6 +410,8 @@ Second line
              (apply #'process-link widget args))
             ((string-equal message-type "move-caret")
              (apply #'move-caret widget args))
+            ((string-equal message-type "process-input")
+             (apply #'process-input widget args))
             ((string-equal message-type "update-progress")
              (apply #'update-progress document args))
             (t
@@ -520,6 +522,17 @@ Second line
   (:method (widget &key path position &allow-other-keys)
     (let ((document (document widget)))
       (ops::move-caret document path position))))
+
+
+(defgeneric process-input (widget &key key code key-code meta ctrl alt shift version &allow-other-keys)
+  (:method (widget &key key code key-code meta ctrl alt shift version &allow-other-keys)
+    (log:info "Processing input"
+               key code key-code meta ctrl alt shift version)
+    (unless (member key '("Meta" "Control" "Alt" "Shift"
+                          "Backspace")
+                    :test #'string=)
+      (let ((document (document widget)))
+        (ops::insert-char document key)))))
 
 
 (defmethod reblocks/widget:render ((widget editor))

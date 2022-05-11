@@ -685,6 +685,24 @@
         ;; altKey = false
         ;; shiftKey = false
         ;; code = 'KeyF'
+        (let* ((content-node (get-editor-content-node (@ event target)))
+               (current-version
+                 (incf (@ content-node dataset version)))
+               (action-code (@ content-node dataset action-code))
+               (args (create
+                      :type "process-input"
+                      :key (@ event key)
+                      :code (@ event code)
+                      :key-code (@ event key-code)
+                      :meta (@ event meta-key)
+                      :ctrl (@ event ctrl-key)
+                      :alt (@ event alt-key)
+                      :shift (@ event shift-key)
+                      :version current-version)))
+
+          (initiate-action action-code
+                           (create :args args)))
+        
         ;; 
         ;; (let* ((default-keymap (@ window default-keymap))
         ;;        (code-block-keymap (@ window code-block-keymap))
