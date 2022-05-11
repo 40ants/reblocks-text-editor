@@ -528,11 +528,16 @@ Second line
   (:method (widget &key key code key-code meta ctrl alt shift version &allow-other-keys)
     (log:info "Processing input"
                key code key-code meta ctrl alt shift version)
-    (unless (member key '("Meta" "Control" "Alt" "Shift"
-                          "Backspace")
-                    :test #'string=)
-      (let ((document (document widget)))
-        (ops::insert-char document key)))))
+    (let ((document (document widget)))
+      (cond
+        ((string= key "Backspace")
+         (ops::delete-char document))
+        ((not (member key '("Meta" "Control" "Alt" "Shift"
+                            "ArrowRight" "ArrowLeft"
+                            "ArrowUp" "ArrowDown"
+                            "Backspace")
+                      :test #'string=))
+         (ops::insert-char document key))))))
 
 
 (defmethod reblocks/widget:render ((widget editor))
