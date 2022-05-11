@@ -498,6 +498,19 @@
                   for tag = (@ node tag-name)
                   when (= tag "A")
                     do (return (@ node href))))))
+
+      (defun move-caret-on-server (content-node path position)
+        (let* ((current-version
+                 (incf (@ content-node dataset version)))
+               (action-code (@ content-node dataset action-code))
+               (args (create
+                      :type "move-caret"
+                      :path path
+                      :position position
+                      :version current-version)))
+
+            (initiate-action action-code
+                             (create :args args))))
       
       (defun on-click (event)
         (let* ((path (calculate-path))
@@ -510,6 +523,30 @@
             (link-href
              (open-link event link-href))
             (t
+             ;; (caret-position) returns position from the toplevel block
+             ;; beginning, but here we need position starting from the innermost
+             ;; HTML node, where caret was placed. Hence why we are getting it
+             ;; from the selection object:
+             (let* ((selection (chain window
+                                      (get-selection)))
+                    (anchor-node (@ selection
+                                    anchor-node))
+                    (anchor-offset (@ selection
+                                      anchor-offset))
+                    ;; (position (caret-position))
+                    (content-node (get-editor-content-node (@ event target))))
+               
+               ;; We need a real node, not TEXT one:
+               (when (= (@ anchor-node node-type)
+                        3)
+                 (setf anchor-node
+                       (@ anchor-node
+                          parent-node)))
+               
+               (move-caret-on-server content-node
+                                     ;; path
+                                     (@ anchor-node id)
+                                     anchor-offset))
              (show-path)
              (update-active-block)))))
 

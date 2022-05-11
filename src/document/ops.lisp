@@ -4,6 +4,7 @@
                 #:children)
   (:import-from #:scriba)
   (:import-from #:reblocks-text-editor/blocks/progress)
+  (:import-from #:reblocks-text-editor/blocks/caret)
   (:import-from #:reblocks-text-editor/utils/markdown
                 #:from-markdown
                 #:to-markdown)
@@ -1319,3 +1320,23 @@
                      reblocks-text-editor/utils/text::+zero-width-space+)))
            current-node))
     (map-document document #'add-space-if-needed)))
+
+
+
+(defun move-caret (document node-id position)
+  (log:debug "Moving caret to" node-id position)
+  
+  (flet ((remove-old-caret (current-node depth)
+           (declare (ignore depth))
+           (if (typep current-node 'reblocks-text-editor/blocks/caret::caret)
+               (reblocks-text-editor/blocks/caret::child current-node)
+               current-node))
+         (add-new-caret (current-node depth)
+           (declare (ignore depth))
+           (if (equal (common-doc:reference current-node)
+                      node-id)
+               (reblocks-text-editor/blocks/caret::make-caret current-node
+                                                              position)
+               current-node)))
+    (map-document document #'remove-old-caret)
+    (map-document document #'add-new-caret)))

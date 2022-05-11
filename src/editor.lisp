@@ -408,6 +408,8 @@ Second line
              (apply #'process-undo widget args))
             ((string-equal message-type "link")
              (apply #'process-link widget args))
+            ((string-equal message-type "move-caret")
+             (apply #'move-caret widget args))
             ((string-equal message-type "update-progress")
              (apply #'update-progress document args))
             (t
@@ -512,6 +514,12 @@ Second line
 (defgeneric process-link (widget &key href &allow-other-keys)
   (:method (widget &key href &allow-other-keys)
     (log:debug "Link" href "was clicked")))
+
+
+(defgeneric move-caret (widget &key path position &allow-other-keys)
+  (:method (widget &key path position &allow-other-keys)
+    (let ((document (document widget)))
+      (ops::move-caret document path position))))
 
 
 (defmethod reblocks/widget:render ((widget editor))
