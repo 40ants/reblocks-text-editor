@@ -638,41 +638,53 @@
       (defun on-keydown (event)
         (chain console
                (log "on-keydown event" event))
-        (let* ((default-keymap (@ window default-keymap))
-               (code-block-keymap (@ window code-block-keymap))
-               (current-node (get-current-block-node))
-               (keymap (progn
-                         (unless current-node
-                           debugger)
-                         (if (= (@ current-node tag-name)
-                                "PRE")
-                             (append code-block-keymap
-                                     default-keymap)
-                             default-keymap)))
-               (handler-called false))
-          (loop with handler-called = false
-                for item in keymap
-                for name = (@ item name)
-                for predicate = (@ item predicate)
-                for func = (@ item func)
-                for prevent-default = (@ item prevent-default)
-                while (not handler-called)
-                when (funcall predicate event)
-                  do (chain console
-                            (log "Calling key handler for" name))
-                     (funcall func event)
-                     (setf handler-called
-                           t)
-                     (when (or
-                            ;; by default we are preventing
-                            (= prevent-default undefined)
-                            ;; but user might override it
-                            ;; specifying False to this attribute:
-                            prevent-default)
-                       (chain event
-                              (prevent-default))))
-          (unless handler-called
-            (update-active-block))))
+        (chain event
+               (prevent-default))
+        ;; TODO: send key to the server we need to send:
+        ;; keyCode = 70
+        ;; key = 'а'
+        ;; metaKey = false
+        ;; ctrlKey = false
+        ;; altKey = false
+        ;; shiftKey = false
+        ;; code = 'KeyF'
+        ;; 
+        ;; (let* ((default-keymap (@ window default-keymap))
+        ;;        (code-block-keymap (@ window code-block-keymap))
+        ;;        (current-node (get-current-block-node))
+        ;;        (keymap (progn
+        ;;                  (unless current-node
+        ;;                    debugger)
+        ;;                  (if (= (@ current-node tag-name)
+        ;;                         "PRE")
+        ;;                      (append code-block-keymap
+        ;;                              default-keymap)
+        ;;                      default-keymap)))
+        ;;        (handler-called false))
+        ;;   (loop with handler-called = false
+        ;;         for item in keymap
+        ;;         for name = (@ item name)
+        ;;         for predicate = (@ item predicate)
+        ;;         for func = (@ item func)
+        ;;         for prevent-default = (@ item prevent-default)
+        ;;         while (not handler-called)
+        ;;         when (funcall predicate event)
+        ;;           do (chain console
+        ;;                     (log "Calling key handler for" name))
+        ;;              (funcall func event)
+        ;;              (setf handler-called
+        ;;                    t)
+        ;;              (when (or
+        ;;                     ;; by default we are preventing
+        ;;                     (= prevent-default undefined)
+        ;;                     ;; but user might override it
+        ;;                     ;; specifying False to this attribute:
+        ;;                     prevent-default)
+        ;;                (chain event
+        ;;                       (prevent-default))))
+        ;;   (unless handler-called
+        ;;     (update-active-block)))
+        )
 
       (defun on-paste (event)
         (chain console
