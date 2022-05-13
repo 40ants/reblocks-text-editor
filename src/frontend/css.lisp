@@ -8,8 +8,13 @@
   (reblocks-lass:make-dependency
     '(body
       (.editor
-       (.content :outline none)
+       (.caret-wrapper
+        ;; :border 1px solid orange
+        (.caret
+         :background-color lightgray))
        (.content
+        :caret-color transparent
+        :outline none
         (p
          :white-space pre-wrap)
         (ul

@@ -1,7 +1,12 @@
 (uiop:define-package #:reblocks-text-editor/blocks/caret
   (:use #:cl)
   (:import-from #:common-doc
-                #:define-node))
+                #:define-node)
+  (:import-from #:serapeum
+                #:length<=
+                #:length>=)
+  (:import-from #:reblocks-text-editor/utils/text
+                #:+zero-width-space+))
 (in-package #:reblocks-text-editor/blocks/caret)
 
 
@@ -25,9 +30,37 @@
   (scriba.emitter:emit (child node) stream))
 
 
-(defmethod reblocks-text-editor/html::to-html ((node caret))
-  (reblocks/html:with-html
-    (:span :id (common-doc:reference node)
-           :class (format nil "caret ~A"
-                          (reblocks-text-editor/html::html-class node))
-           (reblocks-text-editor/html::to-html (child node)))))
+(defmethod reblocks-text-editor/html::to-html ((caret caret))
+  (let ((reblocks/html:*pretty-html* nil))
+    (reblocks/html:with-html
+      ;; TODO: add a check that there is no nodes prohibited as a span container  
+      (let ((child (child caret))
+            (position (caret-position caret)))
+        (:span :id (common-doc:reference caret)
+               :class "caret-wrapper"
+               (typecase child
+                 (common-doc:text-node
+                  (:span :id (common-doc:reference child)
+                         :class (reblocks-text-editor/html::html-class child)
+                         (let* ((text (common-doc:text child))
+                                (left (subseq text 0 position))
+                                (rest (subseq text position))
+                                (caret (if (length<= 1 rest)
+                                           (subseq rest 0 1)
+                                           " "))
+                                (right (when (length<= 2 rest)
+                                         (subseq rest 1))))
+                           (when left
+                             (:span :id (format nil "~A-left"
+                                                (common-doc:reference child))
+                                    (plump:encode-entities left)))
+                           (:span :id (format nil "~A-caret"
+                                              (common-doc:reference child))
+                                  :class "caret"
+                                  caret)
+                           (when right
+                             (:span :id (format nil "~A-right"
+                                                (common-doc:reference child))
+                                    (plump:encode-entities right))))))
+                 (t
+                  (reblocks-text-editor/html::to-html (child caret)))))))))

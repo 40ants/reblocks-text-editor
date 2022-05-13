@@ -1328,16 +1328,56 @@
   
   (flet ((remove-old-caret (current-node depth)
            (declare (ignore depth))
-           (if (typep current-node 'reblocks-text-editor/blocks/caret::caret)
-               (reblocks-text-editor/blocks/caret::child current-node)
-               current-node))
+           (typecase current-node
+             (reblocks-text-editor/blocks/caret::caret
+              (let* ((old-caret current-node)
+                     (child (reblocks-text-editor/blocks/caret::child old-caret)))
+                (dom::replace-node document old-caret child)
+                ;; If cursor was placed into the right part of the currently
+                ;; wrapped text, then we need to recalculate position
+                ;; relative to the beginning of the child text node
+                (when (str:ends-with-p "-right" node-id)
+                  (incf position
+                        ;; Here we are adding 1 because
+                        ;; besides "left" part there is also a "cursor" span
+                        ;; with one symbol inside
+                        (1+
+                         (reblocks-text-editor/blocks/caret::caret-position old-caret)))
+                  ;; and we need to replace right part's node id with
+                  ;; real id of the child, to be able to call add-new-caret
+                  ;; successfully
+                  (setf node-id
+                        (str:replace-all "-right" "" node-id)))
+                ;; The same way we need to fix position when user clicked
+                ;; to the same symbol where caret position currently is:
+                (when (str:ends-with-p "-caret" node-id)
+                  (incf position
+                        (reblocks-text-editor/blocks/caret::caret-position old-caret))
+                  (setf node-id
+                        (str:replace-all "-caret" "" node-id)))
+                
+                (when (str:ends-with-p "-left" node-id)
+                  (setf node-id
+                        (str:replace-all "-left" "" node-id)))
+                child))
+             (t
+              current-node)))
          (add-new-caret (current-node depth)
            (declare (ignore depth))
-           (if (equal (common-doc:reference current-node)
-                      node-id)
-               (reblocks-text-editor/blocks/caret::make-caret current-node
-                                                              position)
-               current-node)))
+           (cond
+             ((equal (common-doc:reference current-node)
+                     node-id)
+              (let ((new-caret (reblocks-text-editor/blocks/caret::make-caret current-node
+                                                                              position)))
+                (add-reference-ids document
+                                   :to-node new-caret)
+                (dom::replace-node document current-node new-caret)
+                ;; (ensure-cursor-position-is-correct document
+                ;;                                    current-node
+                ;;                                    position)
+                new-caret))
+             (t
+              current-node))))
     (map-document document #'remove-old-caret)
     (map-document document #'add-new-caret)))
 
@@ -1349,10 +1389,11 @@
   
   (flet ((search-caret (current-node depth)
            (declare (ignore depth))
-           (cond
-             ((typep current-node 'reblocks-text-editor/blocks/caret::caret)
-              (let* ((child (reblocks-text-editor/blocks/caret::child current-node))
-                     (position (reblocks-text-editor/blocks/caret::caret-position current-node))
+           (typecase current-node
+             (reblocks-text-editor/blocks/caret::caret
+              (let* ((caret current-node)
+                     (child (reblocks-text-editor/blocks/caret::child caret))
+                     (position (reblocks-text-editor/blocks/caret::caret-position caret))
                      (new-position (1+ position)))
                 (etypecase child
                   (common-doc:text-node
@@ -1362,13 +1403,14 @@
                                         (subseq text 0 position)
                                         key
                                         (subseq text position)))
-                     (setf (reblocks-text-editor/blocks/caret::caret-position current-node)
+                     (setf (reblocks-text-editor/blocks/caret::caret-position caret)
                            new-position)
-                     (dom::update-node document child)
-                     (ensure-cursor-position-is-correct document
-                                                        child
-                                                        new-position))))
-                (values current-node)))
+                     (dom::update-node document caret)
+                     ;; (ensure-cursor-position-is-correct document
+                     ;;                                    child
+                     ;;                                    new-position)
+                     )))
+                (values caret)))
              (t
               current-node))))
     (map-document document #'search-caret)))
@@ -1377,10 +1419,11 @@
 (defun delete-char (document)
   (flet ((search-caret (current-node depth)
            (declare (ignore depth))
-           (cond
-             ((typep current-node 'reblocks-text-editor/blocks/caret::caret)
-              (let* ((child (reblocks-text-editor/blocks/caret::child current-node))
-                     (position (reblocks-text-editor/blocks/caret::caret-position current-node)))
+           (typecase current-node
+             (reblocks-text-editor/blocks/caret::caret
+              (let* ((caret current-node)
+                     (child (reblocks-text-editor/blocks/caret::child caret))
+                     (position (reblocks-text-editor/blocks/caret::caret-position caret)))
                 (when (> position 0)
                   (let ((new-position (1- position)))
                     (etypecase child
@@ -1390,13 +1433,14 @@
                                (concatenate 'string
                                             (subseq text 0 new-position)
                                             (subseq text position)))
-                         (setf (reblocks-text-editor/blocks/caret::caret-position current-node)
+                         (setf (reblocks-text-editor/blocks/caret::caret-position caret)
                                new-position)
-                         (dom::update-node document child)
-                         (ensure-cursor-position-is-correct document
-                                                            child
-                                                            new-position))))))
-                (values current-node)))
+                         (dom::update-node document caret)
+                         ;; (ensure-cursor-position-is-correct document
+                         ;;                                    child
+                         ;;                                    new-position)
+                         )))))
+                (values caret)))
              (t
               current-node))))
     (map-document document #'search-caret)))

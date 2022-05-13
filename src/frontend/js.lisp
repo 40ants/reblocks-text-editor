@@ -535,7 +535,7 @@
                                       anchor-offset))
                     ;; (position (caret-position))
                     (content-node (get-editor-content-node (@ event target))))
-               
+
                ;; We need a real node, not TEXT one:
                (when (= (@ anchor-node node-type)
                         3)
