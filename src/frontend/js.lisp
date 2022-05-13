@@ -509,12 +509,27 @@
                       :position position
                       :version current-version)))
 
-            (initiate-action action-code
-                             (create :args args))))
+          (initiate-action action-code
+                           (create :args args))))
+
+      (defun search-innermost-text-wrapper (current-node child-idx)
+        (let ((child (when (> (@ current-node
+                                 child-nodes
+                                 length)
+                              0)
+                       (aref (@ current-node
+                                child-nodes)
+                             child-idx))))
+          (if (or (not child)
+                  (= (@ child node-type)
+                     3))
+              current-node
+              (search-innermost-text-wrapper child 0))))
       
       (defun on-click (event)
         (let* ((path (calculate-path))
-               (link-href (get-link-href path)))
+               (link-href (when (@ path length)
+                            (get-link-href path))))
           (chain console (log "PROCESSING ON CLICK"
                               event
                               path
@@ -537,11 +552,21 @@
                     (content-node (get-editor-content-node (@ event target))))
 
                ;; We need a real node, not TEXT one:
-               (when (= (@ anchor-node node-type)
-                        3)
-                 (setf anchor-node
-                       (@ anchor-node
-                          parent-node)))
+               (cond
+                 ((= (@ anchor-node node-type)
+                     3)
+                  (setf anchor-node
+                        (@ anchor-node
+                           parent-node)))
+                 ;; In case if some HTML node is selected,
+                 ;; we need to go down until we'll find a text node
+                 ;; and take it's parent. Usually this happens when
+                 ;; you've clicked to the beginning of a paragraph:
+                 ((= (@ anchor-node node-type)
+                     1)
+                  (setf anchor-node
+                        (search-innermost-text-wrapper anchor-node
+                                                       anchor-offset))))
                
                (move-caret-on-server content-node
                                      ;; path
