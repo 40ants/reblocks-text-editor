@@ -4,7 +4,8 @@
                 #:children)
   (:import-from #:scriba)
   (:import-from #:reblocks-text-editor/blocks/progress)
-  (:import-from #:reblocks-text-editor/blocks/caret)
+  (:import-from #:reblocks-text-editor/blocks/caret
+                #:make-caret)
   (:import-from #:reblocks-text-editor/utils/markdown
                 #:from-markdown
                 #:to-markdown)
@@ -1326,60 +1327,69 @@
 (defun move-caret (document node-id position)
   (log:debug "Moving caret to" node-id position)
   
-  (flet ((remove-old-caret (current-node depth)
-           (declare (ignore depth))
-           (typecase current-node
-             (reblocks-text-editor/blocks/caret::caret
-              (let* ((old-caret current-node)
-                     (child (reblocks-text-editor/blocks/caret::child old-caret)))
-                (dom::replace-node document old-caret child)
-                ;; If cursor was placed into the right part of the currently
-                ;; wrapped text, then we need to recalculate position
-                ;; relative to the beginning of the child text node
-                (when (str:ends-with-p "-right" node-id)
-                  (incf position
-                        ;; Here we are adding 1 because
-                        ;; besides "left" part there is also a "cursor" span
-                        ;; with one symbol inside
-                        (1+
-                         (reblocks-text-editor/blocks/caret::caret-position old-caret)))
-                  ;; and we need to replace right part's node id with
-                  ;; real id of the child, to be able to call add-new-caret
-                  ;; successfully
-                  (setf node-id
-                        (str:replace-all "-right" "" node-id)))
-                ;; The same way we need to fix position when user clicked
-                ;; to the same symbol where caret position currently is:
-                (when (str:ends-with-p "-caret" node-id)
-                  (incf position
-                        (reblocks-text-editor/blocks/caret::caret-position old-caret))
-                  (setf node-id
-                        (str:replace-all "-caret" "" node-id)))
-                
-                (when (str:ends-with-p "-left" node-id)
-                  (setf node-id
-                        (str:replace-all "-left" "" node-id)))
-                child))
-             (t
-              current-node)))
-         (add-new-caret (current-node depth)
-           (declare (ignore depth))
-           (cond
-             ((equal (common-doc:reference current-node)
-                     node-id)
-              (let ((new-caret (reblocks-text-editor/blocks/caret::make-caret current-node
-                                                                              position)))
-                (add-reference-ids document
-                                   :to-node new-caret)
-                (dom::replace-node document current-node new-caret)
-                ;; (ensure-cursor-position-is-correct document
-                ;;                                    current-node
-                ;;                                    position)
-                new-caret))
-             (t
-              current-node))))
-    (map-document document #'remove-old-caret)
-    (map-document document #'add-new-caret)))
+  (let ((path nil))
+    (declare (special path))
+    
+    (flet ((bind-path (current-node depth)
+             (declare (ignore depth))
+             (values (list 'path)
+                     (list (cons current-node
+                                 path))))
+           (remove-old-caret (current-node depth)
+             (declare (ignore depth))
+             (typecase current-node
+               (reblocks-text-editor/blocks/caret::caret
+                (let* ((old-caret current-node)
+                       (child (reblocks-text-editor/blocks/caret::child old-caret)))
+                  (dom::replace-node document old-caret child)
+                  ;; If cursor was placed into the right part of the currently
+                  ;; wrapped text, then we need to recalculate position
+                  ;; relative to the beginning of the child text node
+                  (when (str:ends-with-p "-caret-right" node-id)
+                    (incf position
+                          ;; Here we are adding 1 because
+                          ;; besides "left" part there is also a "cursor" span
+                          ;; with one symbol inside
+                          (1+
+                           (reblocks-text-editor/blocks/caret::caret-position old-caret)))
+                    ;; and we need to replace right part's node id with
+                    ;; real id of the child, to be able to call add-new-caret
+                    ;; successfully
+                    (setf node-id
+                          (str:replace-all "-caret-right" "" node-id)))
+                 
+                  (when (str:ends-with-p "-caret-left" node-id)
+                    (setf node-id
+                          (str:replace-all "-caret-left" "" node-id)))
+                 
+                  ;; The same way we need to fix position when user clicked
+                  ;; to the same symbol where caret position currently is:
+                  (when (str:ends-with-p "-caret" node-id)
+                    (incf position
+                          (reblocks-text-editor/blocks/caret::caret-position old-caret))
+                    (setf node-id
+                          (str:replace-all "-caret" "" node-id)))
+                  child))
+               (t
+                current-node)))
+           (add-new-caret (current-node depth)
+             (declare (ignore depth))
+             (cond
+               ((equal (common-doc:reference current-node)
+                       node-id)
+                (let ((new-caret (make-caret current-node
+                                             position
+                                             path)))
+                  (add-reference-ids document
+                                     :to-node new-caret)
+                  (dom::replace-node document current-node new-caret)
+                  new-caret))
+               (t
+                current-node))))
+      (map-document document #'remove-old-caret)
+      (map-document document #'add-new-caret 
+                    0
+                    #'bind-path))))
 
 
 (defun insert-char (document key)

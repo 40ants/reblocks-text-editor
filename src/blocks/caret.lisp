@@ -15,15 +15,18 @@
                      :accessor child
                      :documentation "A child inside of which caret was placed. Usually, it will be TEXT-NODE.")
               (caret-position :initarg :position
-                              :accessor caret-position))
+                              :accessor caret-position)
+              (path :initarg :path
+                    :reader caret-path))
   (:tag-name "caret")
   (:documentation "This node represents a current caret position. Only one caret should exist in a document."))
 
 
-(defun make-caret (child caret-position)
+(defun make-caret (child caret-position path)
   (make-instance 'caret
                  :child child
-                 :position caret-position))
+                 :position caret-position
+                 :path path))
 
 
 (defmethod scriba.emitter:emit ((node caret) stream)
@@ -51,7 +54,7 @@
                                 (right (when (length<= 2 rest)
                                          (subseq rest 1))))
                            (when left
-                             (:span :id (format nil "~A-left"
+                             (:span :id (format nil "~A-caret-left"
                                                 (common-doc:reference child))
                                     (plump:encode-entities left)))
                            (:span :id (format nil "~A-caret"
@@ -59,7 +62,7 @@
                                   :class "caret"
                                   caret)
                            (when right
-                             (:span :id (format nil "~A-right"
+                             (:span :id (format nil "~A-caret-right"
                                                 (common-doc:reference child))
                                     (plump:encode-entities right))))))
                  (t

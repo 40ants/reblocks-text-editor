@@ -45,6 +45,11 @@
                      :accessor text-after-caret)))
 
 
+(defun make-editable-document (children)
+  (make-instance 'editable-document
+                 :children (uiop:ensure-list children)))
+
+
 (defmethod (setf caret-position) :after ((value t) (document editable-document))
   (destructuring-bind (node position)
       value

@@ -44,7 +44,9 @@
   (:import-from #:reblocks-text-editor/typed-pieces/common-doc-impl
                 #:decrement-of-placeholders-before-caret)
   (:import-from #:reblocks-text-editor/html
-                #:add-markup-to))
+                #:add-markup-to)
+  (:import-from #:reblocks-text-editor/document/editable
+                #:make-editable-document))
 (in-package #:reblocks-text-editor-tests/document/ops)
 
 
@@ -265,8 +267,7 @@ Third."))
 
 (deftest test-prepare-new-content-with-space-after-placeholder
   (let* ((image (common-doc:make-image "source-does-not-matter"))
-         (doc (make-instance 'reblocks-text-editor/document/editable::editable-document
-                             :children (list image))))
+         (doc (make-editable-document image)))
     (reblocks-text-editor/document/ops::add-reference-ids doc)
 
     ;; Just to be sure the reference was written into the image node:    
@@ -289,7 +290,7 @@ Third."))
 
 
 (deftest test-prepare-new-content-when-there-is-no-markup
-  (let* ((doc (make-instance 'reblocks-text-editor/document/editable::editable-document)))
+  (let* ((doc (make-editable-document nil)))
     (reblocks-text-editor/document/ops::add-reference-ids doc)
 
     (let* ((string "foo bar")
@@ -304,7 +305,7 @@ Third."))
 
 
 (deftest test-prepare-new-content-with-beginning-of-image-markup
-  (let* ((doc (make-instance 'reblocks-text-editor/document/editable::editable-document)))
+  (let* ((doc (make-editable-document nil)))
     (reblocks-text-editor/document/ops::add-reference-ids doc)
 
     (let* ((string "![](")
@@ -324,8 +325,7 @@ Third."))
          (baz (make-text "baz"))
          (blah (make-text "blah"))
          (minor (make-text "minor"))
-         (doc (make-instance 'reblocks-text-editor/document/editable::editable-document
-                             :children (list foo bar baz))))
+         (doc (make-editable-document (list foo bar baz))))
     ;; Now we'll try to replace "bar" node with two nodes "blah" and "minor"
     (flet ((replace-bar (node depth)
              (declare (ignore depth))
