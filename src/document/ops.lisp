@@ -54,18 +54,25 @@
     common-doc:base-list))
 
 
+(defvar *child-idx*)
+(setf (documentation '*child-idx* 'variable)
+      "This variable will be set to number when we are traversing
+       node having multiple children and will be unbound in other cases.")
+
+
 ;; ignore-critiques: optionals
 (defun %map-node-with-children (cnode function &optional (depth 0) make-bindings including-markup)
   (let ((possibly-new-node (funcall function cnode depth)))
     (when (eql possibly-new-node cnode)
       (setf (children cnode)
             (loop for child in (children cnode)
+                  for *child-idx* upfrom 0
                   ;; for is-markup = (markup-p child)
                   for need-to-process = t
-                                        ;; (or including-markup
-                                        ;;     (not is-markup))
-                                        ;; Markup nodes are not collected because they are "virtual"
-                                        ;; and should not be written back as a children list:
+                  ;; (or including-markup
+                  ;;     (not is-markup))
+                  ;; Markup nodes are not collected because they are "virtual"
+                  ;; and should not be written back as a children list:
                   for need-to-collect = t ;; (not is-markup)
                   for new-children = (when need-to-process
                                        ;; Mapper might return a list to replace current node with a multiple nodes
@@ -103,11 +110,12 @@
   (:method ((doc common-doc:document) function &optional (depth 0) make-bindings including-markup)
     (setf (children doc)
           (loop for child in (children doc)
+                for *child-idx* upfrom 0
                 ;; for is-markup = (markup-p child)
                 for need-to-process = t ;; (or including-markup
                                         ;;   (not is-markup))
-                ;; Markup nodes are not collected because they are "virtual"
-                ;; and should not be written back as a children list:
+                                        ;; Markup nodes are not collected because they are "virtual"
+                                        ;; and should not be written back as a children list:
                 for need-to-collect = t ;; (not is-markup)
                 for new-node =  (when need-to-process
                                   (map-document child function
@@ -1327,14 +1335,29 @@
 (defun move-caret (document node-id position)
   (log:debug "Moving caret to" node-id position)
   
-  (let ((path nil))
+  (let ((path nil)
+        (caret-added nil))
     (declare (special path))
     
     (flet ((bind-path (current-node depth)
              (declare (ignore depth))
-             (values (list 'path)
-                     (list (cons current-node
-                                 path))))
+             (let ((previous-top (car path)))
+               (when previous-top
+                 ;; Here we are attaching child idx
+                 ;; to the previous node, to simplify
+                 ;; further navigation. For any item
+                 ;; in the PATH we can  , and
+                 ;; call (ELT (children (car item))
+                 ;;           (cdr item))
+                 (setf (cdr previous-top)
+                       (when (boundp '*child-idx*)
+                         *child-idx*)))
+
+               (let ((new-path (cons (cons current-node
+                                           nil)
+                                     path)))
+                 (values (list 'path)
+                         (list new-path)))))
            (remove-old-caret (current-node depth)
              (declare (ignore depth))
              (typecase current-node
@@ -1374,15 +1397,26 @@
                 current-node)))
            (add-new-caret (current-node depth)
              (declare (ignore depth))
+             (when caret-added
+               (return-from move-caret))
+             
              (cond
                ((equal (common-doc:reference current-node)
                        node-id)
                 (let ((new-caret (make-caret current-node
                                              position
-                                             path)))
+                                             ;; CAR of the path
+                                             ;; should be a current-node,
+                                             ;; we don't need it
+                                             (cdr path))))
                   (add-reference-ids document
                                      :to-node new-caret)
                   (dom::replace-node document current-node new-caret)
+                  ;; We need to set this flag
+                  ;; to make an exit on the next call and to not
+                  ;; map through rest document nodes after
+                  ;; caret was added:
+                  (setf caret-added t)
                   new-caret))
                (t
                 current-node))))
