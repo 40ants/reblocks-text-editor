@@ -1339,87 +1339,116 @@
         (caret-added nil))
     (declare (special path))
     
-    (flet ((bind-path (current-node depth)
-             (declare (ignore depth))
-             (let ((previous-top (car path)))
-               (when previous-top
-                 ;; Here we are attaching child idx
-                 ;; to the previous node, to simplify
-                 ;; further navigation. For any item
-                 ;; in the PATH we can  , and
-                 ;; call (ELT (children (car item))
-                 ;;           (cdr item))
-                 (setf (cdr previous-top)
-                       (when (boundp '*child-idx*)
-                         *child-idx*)))
+    (labels ((bind-path (current-node depth)
+               (declare (ignore depth))
+               (let ((previous-top (car path)))
+                 (when previous-top
+                   ;; Here we are attaching child idx
+                   ;; to the previous node, to simplify
+                   ;; further navigation. For any item
+                   ;; in the PATH we can
+                   ;; call (ELT (children (car item))
+                   ;;           (cdr item))
+                   (setf (cdr previous-top)
+                         (when (boundp '*child-idx*)
+                           *child-idx*)))
 
-               (let ((new-path (cons (cons current-node
-                                           nil)
-                                     path)))
-                 (values (list 'path)
-                         (list new-path)))))
-           (remove-old-caret (current-node depth)
-             (declare (ignore depth))
-             (typecase current-node
-               (reblocks-text-editor/blocks/caret::caret
-                (let* ((old-caret current-node)
-                       (child (reblocks-text-editor/blocks/caret::child old-caret)))
-                  (dom::replace-node document old-caret child)
-                  ;; If cursor was placed into the right part of the currently
-                  ;; wrapped text, then we need to recalculate position
-                  ;; relative to the beginning of the child text node
-                  (when (str:ends-with-p "-caret-right" node-id)
-                    (incf position
-                          ;; Here we are adding 1 because
-                          ;; besides "left" part there is also a "cursor" span
-                          ;; with one symbol inside
-                          (1+
-                           (reblocks-text-editor/blocks/caret::caret-position old-caret)))
-                    ;; and we need to replace right part's node id with
-                    ;; real id of the child, to be able to call add-new-caret
-                    ;; successfully
-                    (setf node-id
-                          (str:replace-all "-caret-right" "" node-id)))
+                 (let ((new-path (cons (cons current-node
+                                             nil)
+                                       path)))
+                   (values (list 'path)
+                           (list new-path)))))
+             (remove-old-caret (current-node depth)
+               (declare (ignore depth))
+               (typecase current-node
+                 (reblocks-text-editor/blocks/caret::caret
+                  (let* ((old-caret current-node)
+                         (child (reblocks-text-editor/blocks/caret::child old-caret)))
+                    (dom::replace-node document old-caret child)
+                    ;; If cursor was placed into the right part of the currently
+                    ;; wrapped text, then we need to recalculate position
+                    ;; relative to the beginning of the child text node
+                    (when (str:ends-with-p "-caret-right" node-id)
+                      (incf position
+                            ;; Here we are adding 1 because
+                            ;; besides "left" part there is also a "cursor" span
+                            ;; with one symbol inside
+                            (1+
+                             (reblocks-text-editor/blocks/caret::caret-position old-caret)))
+                      ;; and we need to replace right part's node id with
+                      ;; real id of the child, to be able to call add-new-caret
+                      ;; successfully
+                      (setf node-id
+                            (str:replace-all "-caret-right" "" node-id)))
                  
-                  (when (str:ends-with-p "-caret-left" node-id)
-                    (setf node-id
-                          (str:replace-all "-caret-left" "" node-id)))
+                    (when (str:ends-with-p "-caret-left" node-id)
+                      (setf node-id
+                            (str:replace-all "-caret-left" "" node-id)))
                  
-                  ;; The same way we need to fix position when user clicked
-                  ;; to the same symbol where caret position currently is:
-                  (when (str:ends-with-p "-caret" node-id)
-                    (incf position
-                          (reblocks-text-editor/blocks/caret::caret-position old-caret))
-                    (setf node-id
-                          (str:replace-all "-caret" "" node-id)))
-                  child))
-               (t
-                current-node)))
-           (add-new-caret (current-node depth)
-             (declare (ignore depth))
-             (when caret-added
-               (return-from move-caret))
+                    ;; The same way we need to fix position when user clicked
+                    ;; to the same symbol where caret position currently is:
+                    (when (str:ends-with-p "-caret" node-id)
+                      (incf position
+                            (reblocks-text-editor/blocks/caret::caret-position old-caret))
+                      (setf node-id
+                            (str:replace-all "-caret" "" node-id)))
+                    child))
+                 (t
+                  current-node)))
+             (search-next-leaf (path-to-the-top)
+               (loop for (node . child-id) in path-to-the-top
+                     for next-child-id = (1+ child-id)
+                     for children = (common-doc:children node)
+                     for next-child = (when (< next-child-id
+                                               (length children))
+                                        (elt children
+                                             next-child-id))
+                     for first-leaf = (get-first-leaf next-child)
+                     when first-leaf
+                       do (return first-leaf)))
+             (add-new-caret (current-node depth)
+               (declare (ignore depth))
+               (when caret-added
+                 (return-from move-caret))
              
-             (cond
-               ((equal (common-doc:reference current-node)
-                       node-id)
-                (let ((new-caret (make-caret current-node
-                                             position
-                                             ;; CAR of the path
-                                             ;; should be a current-node,
-                                             ;; we don't need it
-                                             (cdr path))))
-                  (add-reference-ids document
-                                     :to-node new-caret)
-                  (dom::replace-node document current-node new-caret)
-                  ;; We need to set this flag
-                  ;; to make an exit on the next call and to not
-                  ;; map through rest document nodes after
-                  ;; caret was added:
-                  (setf caret-added t)
-                  new-caret))
-               (t
-                current-node))))
+               (cond
+                 ((equal (common-doc:reference current-node)
+                         node-id)
+                  (cond
+                    ((<= (node-length current-node)
+                         position)
+                     (let ((next-node
+                             (search-next-leaf (cdr path))))
+                       (cond
+                         (next-node
+                          (setf node-id
+                                (common-doc:reference next-node))
+                          (decf position
+                                (node-length current-node))
+                          ;; Don't change current node, because we'll put caret on the next node
+                          current-node)
+                         (t
+                          (return-caret current-node)))))
+                    (t
+                     (return-caret current-node))))
+                 (t
+                  current-node)))
+             (return-caret (node-to-wrap)
+               (let ((new-caret (make-caret node-to-wrap
+                                            position
+                                            ;; CAR of the path
+                                            ;; should be a current-node,
+                                            ;; we don't need it
+                                            (cdr path))))
+                 (add-reference-ids document
+                                    :to-node new-caret)
+                 (dom::replace-node document node-to-wrap new-caret)
+                 ;; We need to set this flag
+                 ;; to make an exit on the next call and to not
+                 ;; map through rest document nodes after
+                 ;; caret was added:
+                 (setf caret-added t)
+                 new-caret)))
       (map-document document #'remove-old-caret)
       (map-document document #'add-new-caret 
                     0
@@ -1488,3 +1517,13 @@
              (t
               current-node))))
     (map-document document #'search-caret)))
+
+
+(defun get-first-leaf (node)
+  (typecase node
+    (node-with-children
+     (when (common-doc:children node)
+       (get-first-leaf
+        (first (common-doc:children node)))))
+    (t
+     node)))

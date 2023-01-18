@@ -40,4 +40,5 @@
          (has-type 'common-doc:text-node)
          (has-slots 'common-doc:text "Lisp"
                     'common-doc:reference "el2"))
+        ;; Actually caret should wrap around the second ** text node:
         (has-type 'reblocks-text-editor/blocks/caret::caret))))))
